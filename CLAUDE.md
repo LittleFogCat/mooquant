@@ -54,6 +54,26 @@ ai_strategy._make_features() → 特征 DataFrame
 RandomForestClassifier → 预测结果（涨跌方向 + 置信度）
 ```
 
+## Git 提交规范
+
+本项目严格遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/) 规范：
+
+```
+<type>: <description>
+```
+
+常用 type：
+- `feat`: 新功能
+- `fix`: 修复 bug
+- `docs`: 文档变更
+- `refactor`: 重构（不改变功能）
+- `test`: 测试相关
+- `chore`: 构建、依赖等杂项
+
+示例：`feat: 添加动量因子特征` / `fix: 修复 get_kline 日期索引丢失问题`
+
+当用户要求“提交”时，除非特别声明“提交到本地”，则需要提交+推送。
+
 ### xtquant 数据注意事项
 
 `xtdata.get_market_data()` 返回一个三维嵌套字典：`{字段: {代码: [值列表]}}`。`DataFetcher.get_kline()` 将其展平为标准 DataFrame。xtquant 的时间戳索引被丢弃 — 改用占位的 `date` 列代替。这是一个已知的局限性。
