@@ -64,11 +64,14 @@ class DataFetcher:
         df["code"] = stock_code
 
         # ── 提取真实交易日期 ──────────────────────────────────────
+        # 根据周期选择时间格式：日线以上用 %Y%m%d，分钟线用 %Y%m%d%H%M%S
+        is_intraday = period.endswith("m")
+        time_fmt = "%Y%m%d%H%M%S" if is_intraday else "%Y%m%d"
+
         time_arr = raw.get("time", {}).get(stock_code, [])
         if time_arr and len(time_arr) > 0:
-            # timetag_to_datetime 将毫秒时间戳转为格式化字符串
             df["date"] = [
-                pd.Timestamp(xtdata.timetag_to_datetime(int(t), "%Y%m%d"))
+                pd.Timestamp(xtdata.timetag_to_datetime(int(t), time_fmt))
                 for t in time_arr
             ]
         else:
@@ -100,6 +103,32 @@ class DataFetcher:
 
         return df
 
+    # ── 多周期便捷方法 ──────────────────────────────────────────
+    def get_daily_kline(self, stock_code: str, count: int = 100,
+                        dividend_type: str = "front") -> pd.DataFrame:
+        """获取日线 K 线（便捷方法）"""
+        return self.get_kline(stock_code, period="1d", count=count,
+                              dividend_type=dividend_type)
+
+    def get_weekly_kline(self, stock_code: str, count: int = 52,
+                         dividend_type: str = "front") -> pd.DataFrame:
+        """获取周线 K 线"""
+        return self.get_kline(stock_code, period="1w", count=count,
+                              dividend_type=dividend_type)
+
+    def get_monthly_kline(self, stock_code: str, count: int = 24,
+                          dividend_type: str = "front") -> pd.DataFrame:
+        """获取月线 K 线"""
+        return self.get_kline(stock_code, period="1mon", count=count,
+                              dividend_type=dividend_type)
+
+    def get_minute_kline(self, stock_code: str, period: str = "1m",
+                         count: int = 240,
+                         dividend_type: str = "front") -> pd.DataFrame:
+        """获取分钟线 K 线（1m / 5m / 15m / 30m / 60m）"""
+        return self.get_kline(stock_code, period=period, count=count,
+                              dividend_type=dividend_type)
+
     # ── 全市场股票列表 ──────────────────────────────────────────
     def get_stock_list(self, market: str = "SH") -> list:
         """
@@ -124,11 +153,23 @@ class DataFetcher:
 
     # ── 测试函数（无需 QMT 运行）─────────────────────────────────
     @staticmethod
-    def mock_kline(count: int = 100) -> pd.DataFrame:
-        """生成模拟 K 线数据，供离线测试使用"""
+    def mock_kline(count: int = 100, period: str = "1d",
+                   stock_code: str = "000001.SZ") -> pd.DataFrame:
+        """生成模拟 K 线数据，支持多周期，供离线测试使用。
+
+        :param period: 周期 "1m"/"5m"/"1d"/"1w"/"1mon"
+        """
         np.random.seed(42)
         base = 10.0
-        dates = pd.date_range(end=pd.Timestamp.now(), periods=count, freq="D")
+
+        # 根据周期生成时间序列
+        freq_map = {
+            "1m": "min", "5m": "5min", "15m": "15min",
+            "30m": "30min", "60m": "h", "1d": "D", "1w": "W", "1mon": "MS",
+        }
+        freq = freq_map.get(period, "D")
+        dates = pd.date_range(end=pd.Timestamp.now(), periods=count, freq=freq)
+
         closes = base * np.exp(np.cumsum(np.random.randn(count) * 0.02))
         df = pd.DataFrame({
             "date": dates,
@@ -137,7 +178,7 @@ class DataFetcher:
             "low": closes * (1 - abs(np.random.randn(count)) * 0.01),
             "close": closes,
             "volume": np.random.randint(100000, 10000000, count),
-            "code": "000001.SZ",
+            "code": stock_code,
         })
         return df
 

@@ -271,6 +271,201 @@ def live_predict(stock_code: str = "000001.SZ") -> dict:
     return result
 
 
+# ═══════════════════════════════════════════════════════════════
+# 2.4 多模型对比
+# ═══════════════════════════════════════════════════════════════
+
+MODEL_REGISTRY: dict[str, tuple] = {}
+
+
+def _register_model(name: str, requires: list[str] | None = None):
+    """返回一个装饰器，将被装饰函数注册为模型工厂。"""
+    if requires is None:
+        requires = []
+
+    def decorator(factory):
+        MODEL_REGISTRY[name] = (factory, requires)
+        return factory
+
+    return decorator
+
+
+def _get_model_class(name: str):
+    if name in MODEL_REGISTRY:
+        factory, requires = MODEL_REGISTRY[name]
+        for pkg in requires:
+            try:
+                __import__(pkg)
+            except ImportError:
+                print(f"[警告] 缺少 '{pkg}'，模型 '{name}' 不可用")
+                return None
+        return factory()
+    return None
+
+
+@_register_model("randomforest", requires=[])
+def _make_randomforest():
+    return RandomForestClassifier(n_estimators=100, max_depth=6, random_state=42)
+
+
+@_register_model("xgboost", requires=["xgboost"])
+def _make_xgboost():
+    import xgboost as xgb
+    return xgb.XGBClassifier(
+        n_estimators=100, max_depth=6, learning_rate=0.1,
+        random_state=42, eval_metric="logloss",
+    )
+
+
+@_register_model("lightgbm", requires=["lightgbm"])
+def _make_lightgbm():
+    import lightgbm as lgb
+    return lgb.LGBMClassifier(
+        n_estimators=100, max_depth=6, learning_rate=0.1,
+        random_state=42, verbose=-1,
+    )
+
+
+def compare_models(show_detail: bool = True) -> dict:
+    """对比所有可用模型的准确率（相同时序交叉验证）。
+
+    返回 {model_name: avg_accuracy}。
+    """
+    from data_fetcher import DataFetcher
+
+    raw = DataFetcher.mock_kline(500)
+    features = _make_features(raw)
+
+    feature_cols = [
+        "ret_1", "ret_5", "ret_10", "ret_20",
+        "volatility_5", "volatility_10",
+        "volume_ratio", "pos_20",
+    ]
+    X = features[feature_cols]
+    y = features["label"]
+
+    tscv = TimeSeriesSplit(n_splits=5)
+    results = {}
+
+    if show_detail:
+        print("[多模型对比] TimeSeriesSplit (n_splits=5)")
+
+    for model_name in sorted(MODEL_REGISTRY.keys()):
+        model = _get_model_class(model_name)
+        if model is None:
+            continue
+
+        fold_accs = []
+        for train_idx, test_idx in tscv.split(X):
+            X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+            y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+
+            if len(X_train) > 5:
+                X_train = X_train.iloc[:-5]
+                y_train = y_train.iloc[:-5]
+
+            model.fit(X_train, y_train)
+            y_pred = model.predict(X_test)
+            fold_accs.append(accuracy_score(y_test, y_pred))
+
+        avg_acc = np.mean(fold_accs)
+        results[model_name] = round(float(avg_acc), 4)
+
+        if show_detail:
+            print(f"  {model_name:15s}  {avg_acc:.2%} ({len(fold_accs)} folds)")
+
+    if show_detail and results:
+        best = max(results, key=results.get)
+        print(f"\n  最佳: {best} ({results[best]:.2%})")
+
+    return results
+
+
+# ═══════════════════════════════════════════════════════════════
+# 2.5 多股票批量预测
+# ═══════════════════════════════════════════════════════════════
+
+def batch_predict(stock_list: list[str],
+                  verbose: bool = True) -> pd.DataFrame:
+    """批量预测多只股票，返回按置信度降序的 DataFrame。
+
+    :param stock_list: 股票代码列表
+    :param verbose: 是否打印进度
+    """
+    from data_fetcher import DataFetcher
+
+    model, metadata = load_model()
+    if model is None:
+        print("[错误] 未找到已训练模型。先运行 offline_predict()")
+        return pd.DataFrame()
+
+    feature_cols = metadata.get("feature_cols", [
+        "ret_1", "ret_5", "ret_10", "ret_20",
+        "volatility_5", "volatility_10",
+        "volume_ratio", "pos_20",
+    ])
+
+    fetcher = DataFetcher()
+    fetcher.connect()
+
+    results = []
+    total = len(stock_list)
+
+    for i, code in enumerate(stock_list):
+        if verbose and (i + 1) % 10 == 0:
+            print(f"  进度: {i + 1}/{total}")
+
+        try:
+            kline = fetcher.get_kline(code, period="1d", count=200)
+            if kline.empty:
+                continue
+
+            features = _make_features(kline)
+            if len(features) < 30:
+                continue
+
+            missing = [c for c in feature_cols if c not in features.columns]
+            if missing:
+                continue
+
+            latest = features.iloc[-1:][feature_cols]
+            prob = model.predict_proba(latest)[0]
+            pred = model.predict(latest)[0]
+            confidence = max(prob)
+
+            if confidence < 0.55:
+                continue
+
+            results.append({
+                "code": code,
+                "prediction": "up" if pred == 1 else "down",
+                "confidence": round(float(confidence), 4),
+                "prob_up": round(float(prob[1]), 4),
+                "close": round(float(features.iloc[-1]["close"]), 2),
+            })
+        except Exception as e:
+            if verbose:
+                print(f"  [跳过] {code}: {e}")
+            continue
+
+    if not results:
+        print("[警告] 无有效预测结果")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(results).sort_values("confidence", ascending=False)
+    df = df.reset_index(drop=True)
+
+    if verbose:
+        print(f"\n[批量预测完成] {len(df)}/{total} 只有效预测")
+        top = df.head(5)
+        for _, row in top.iterrows():
+            d = "↑" if row["prediction"] == "up" else "↓"
+            print(f"  {row['code']:>12s} {d}  "
+                  f"置信度={row['confidence']:.2%}  收盘={row['close']}")
+
+    return df
+
+
 if __name__ == "__main__":
     import sys
     if "--live" in sys.argv:
