@@ -224,5 +224,93 @@ def main():
         print(f"\n完成: {total} 个股票 CSV 文件")
 
 
+def verify_data(extract_dir: str = "tmp/extract",
+                output_dir: str = "data") -> dict:
+    """校验 CSV 与原始 .day 文件的一致性。
+
+    逐文件对比：.day 有效记录数 vs CSV 行数，检测截断或损坏。
+    """
+    from tdx_reader import parse_day_bytes
+
+    market_dirs = {"sh": "SH", "sz": "SZ", "bj": "BJ"}
+    results: dict[str, list[dict]] = {"ok": [], "mismatch": [], "missing": []}
+
+    for mkt_dir, mkt_label in market_dirs.items():
+        lday_dir = os.path.join(extract_dir, mkt_dir, "lday")
+        csv_dir = os.path.join(output_dir, mkt_dir)
+
+        if not os.path.isdir(lday_dir):
+            continue
+
+        day_files = sorted(glob.glob(os.path.join(lday_dir, "*.day")))
+        for day_path in day_files:
+            _, code = _parse_code(day_path)
+            csv_path = os.path.join(csv_dir, f"{code}.csv")
+
+            # 读取 .day 有效记录数
+            try:
+                with open(day_path, "rb") as f:
+                    raw = f.read()
+                day_records = len(parse_day_bytes(raw))
+            except Exception:
+                results["missing"].append({
+                    "code": code, "market": mkt_label,
+                    "error": "failed to parse .day file",
+                })
+                continue
+
+            # 读取 CSV 行数
+            if not os.path.exists(csv_path):
+                results["missing"].append({
+                    "code": code, "market": mkt_label,
+                    "day_records": day_records, "csv_rows": 0,
+                })
+                continue
+
+            try:
+                df = pd.read_csv(csv_path)
+                csv_rows = len(df)
+            except Exception:
+                results["missing"].append({
+                    "code": code, "market": mkt_label,
+                    "error": "failed to read CSV",
+                })
+                continue
+
+            if day_records == csv_rows:
+                results["ok"].append({
+                    "code": code, "market": mkt_label, "rows": csv_rows,
+                })
+            else:
+                results["mismatch"].append({
+                    "code": code, "market": mkt_label,
+                    "day_records": day_records, "csv_rows": csv_rows,
+                    "delta": csv_rows - day_records,
+                })
+
+    total = sum(len(v) for v in results.values())
+    summary = {
+        "total_checked": total,
+        "ok": len(results["ok"]),
+        "mismatch": len(results["mismatch"]),
+        "missing": len(results["missing"]),
+        "details": results,
+    }
+
+    print(f"\n[数据完整性校验]")
+    print(f"  总计: {total} 个文件")
+    print(f"  ✓ 一致: {summary['ok']}")
+    if results["mismatch"]:
+        print(f"  ✗ 不一致: {len(results['mismatch'])}")
+        for m in results["mismatch"][:10]:
+            print(f"    {m['code']}: .day={m['day_records']}, CSV={m['csv_rows']} (差{m['delta']})")
+    if results["missing"]:
+        print(f"  ✗ 缺失CSV: {len(results['missing'])}")
+        for m in results["missing"][:5]:
+            print(f"    {m['code']}: {m.get('error', 'no CSV')}")
+
+    return summary
+
+
 if __name__ == "__main__":
     main()
