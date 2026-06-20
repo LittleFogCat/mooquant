@@ -20,7 +20,6 @@ import datetime
 import glob
 import json
 import os
-import struct
 import sys
 import zipfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -28,12 +27,13 @@ from urllib.request import urlopen
 
 import pandas as pd
 
+from tdx_reader import parse_day_bytes
+
 # 修复 Windows GBK 终端下的 Unicode 输出问题
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 TDX_URL = "https://data.tdx.com.cn/vipdoc/hsjday.zip"
-RECORD_SIZE = 32
 META_FILE = "tmp/meta.json"
 
 
@@ -60,32 +60,6 @@ def _parse_code(filename: str) -> tuple[str, str]:
     return market, code
 
 
-def _parse_day_file(filepath: str) -> list[dict]:
-    """解析单个 .day 文件，返回 record 列表（使用 iter_unpack 批量解析）"""
-    with open(filepath, "rb") as f:
-        data = f.read()
-
-    count = len(data) // RECORD_SIZE
-    data = data[: count * RECORD_SIZE]
-
-    records: list[dict] = []
-    for date_int, open_p, high_p, low_p, close_p, amount, volume, _, _ in struct.iter_unpack(
-        "IIIIIfIhh", data
-    ):
-        if date_int < 19900101 or date_int > 20991231:
-            continue
-        records.append({
-            "date": pd.to_datetime(str(date_int), format="%Y%m%d"),
-            "open": open_p / 1000.0,
-            "high": high_p / 1000.0,
-            "low": low_p / 1000.0,
-            "close": close_p / 1000.0,
-            "volume": volume,
-            "amount": amount,
-        })
-    return records
-
-
 def _convert_one_file(args: tuple) -> str | None:
     """单个 .day 文件转换（供多进程调用）。返回 code，失败返回 None。"""
     filepath, out_mkt_dir, verbose = args
@@ -93,24 +67,7 @@ def _convert_one_file(args: tuple) -> str | None:
         with open(filepath, "rb") as f:
             data = f.read()
 
-        count = len(data) // RECORD_SIZE
-        data = data[: count * RECORD_SIZE]
-
-        records: list[dict] = []
-        for date_int, open_p, high_p, low_p, close_p, amount, volume, _, _ in struct.iter_unpack(
-            "IIIIIfIhh", data
-        ):
-            if date_int < 19900101 or date_int > 20991231:
-                continue
-            records.append({
-                "date": pd.to_datetime(str(date_int), format="%Y%m%d"),
-                "open": open_p / 1000.0,
-                "high": high_p / 1000.0,
-                "low": low_p / 1000.0,
-                "close": close_p / 1000.0,
-                "volume": volume,
-                "amount": amount,
-            })
+        records = parse_day_bytes(data)
 
         if not records:
             return None

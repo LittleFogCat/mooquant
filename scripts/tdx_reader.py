@@ -10,6 +10,35 @@ import struct
 import pandas as pd
 
 
+RECORD_SIZE = 32
+
+def parse_day_bytes(data: bytes) -> list[dict]:
+    """解析 .day 文件字节数据，返回 record 列表（纯解析，不含 code 字段）。
+
+    每条记录 32 字节: date:4, open:4, high:4, low:4, close:4, amount:4, volume:4, reserved:8
+    价格原始单位为千分之一元，此处除以 1000 转为元。
+    """
+    count = len(data) // RECORD_SIZE
+    data = data[: count * RECORD_SIZE]
+
+    records: list[dict] = []
+    for date_int, open_p, high_p, low_p, close_p, amount, volume, _, _ in struct.iter_unpack(
+        "IIIIIfIhh", data
+    ):
+        if date_int < 19900101 or date_int > 20991231:
+            continue
+        records.append({
+            "date": pd.to_datetime(str(date_int), format="%Y%m%d"),
+            "open": open_p / 1000.0,
+            "high": high_p / 1000.0,
+            "low": low_p / 1000.0,
+            "close": close_p / 1000.0,
+            "volume": volume,
+            "amount": amount,
+        })
+    return records
+
+
 def _parse_tdx_code(filename: str) -> str:
     """
     从 TDX 文件名推断股票代码和市场。
@@ -25,28 +54,10 @@ def _parse_tdx_code(filename: str) -> str:
 
 
 def _parse_day_records(data: bytes, code: str) -> list[dict]:
-    """解析 .day 文件字节数据为 record dict 列表（使用 iter_unpack 批量解析）"""
-    records = []
-    record_count = len(data) // 32
-    data = data[: record_count * 32]
-
-    for date_int, open_p, high_p, low_p, close_p, amount, volume, _, _ in struct.iter_unpack(
-        "IIIIIfIhh", data
-    ):
-        if date_int < 19900101 or date_int > 20991231:
-            continue
-        records.append(
-            {
-                "date": pd.to_datetime(str(date_int), format="%Y%m%d"),
-                "open": open_p / 1000.0,
-                "high": high_p / 1000.0,
-                "low": low_p / 1000.0,
-                "close": close_p / 1000.0,
-                "volume": volume,
-                "amount": amount,
-                "code": code,
-            }
-        )
+    """解析 .day 文件字节数据为 record dict 列表，附加 code 字段。"""
+    records = parse_day_bytes(data)
+    for r in records:
+        r["code"] = code
     return records
 
 

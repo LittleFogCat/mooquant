@@ -1,0 +1,24 @@
+{
+  "training_date": "2026-06-20T19:14:14.859585",
+  "feature_cols": [
+    "ret_1",
+    "ret_5",
+    "ret_10",
+    "ret_20",
+    "volatility_5",
+    "volatility_10",
+    "volume_ratio",
+    "pos_20"
+  ],
+  "accuracy_avg": 0.4987,
+  "accuracy_folds": [
+    0.3291,
+    0.5949,
+    0.5823,
+    0.5316,
+    0.4557
+  ],
+  "n_estimators": 100,
+  "max_depth": 6,
+  "train_samples": 470
+}

@@ -11,5 +11,7 @@ venv/
 *.log
 .claude/settings*.json
 .claude/worktrees/
+.claude/.hermes-tmp/
 tmp/
 data/
+models/*.joblib
