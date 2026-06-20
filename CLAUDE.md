@@ -4,36 +4,60 @@
 
 ## 概述
 
-QuantDemo 是一个 AI 量化交易演示项目，使用 QMT（国金证券模拟版）+ xtquant SDK + scikit-learn。提供行情数据获取、特征工程和基于机器学习的股票预测（RandomForest 分类器，预测未来 5 日涨跌）。
+QuantDemo 是一个 AI 量化交易 Skill，使用 QMT（国金证券模拟版）+ xtquant SDK + scikit-learn。提供行情数据获取、特征工程和基于机器学习的股票预测（RandomForest 分类器，预测未来 5 日涨跌）。
+
+## 项目结构
+
+```
+quantdemo/
+├── SKILL.md                     # Skill 定义（根目录）
+├── CLAUDE.md                    # 项目指引
+├── README.md
+├── requirements.txt
+├── scripts/
+│   ├── extract_tdx.py           # 通达信日线 zip → CSV 提取
+│   ├── tdx_reader.py            # 通达信 .day 文件解析器
+│   ├── data_fetcher.py          # QMT 行情数据获取
+│   ├── ai_strategy.py           # AI 选股策略（ML 管线）
+│   ├── qmt_env.py               # QMT 环境检测与连接
+│   └── run_tests.py             # 测试运行器
+├── data/
+│   ├── sh/                      # 沪市 CSV（600000.csv, ...）
+│   ├── sz/                      # 深市 CSV（000001.csv, ...）
+│   └── bj/                      # 北交所 CSV（430017.csv, ...）
+└── tmp/                         # 临时文件（hsjday.zip 等）
+```
 
 ## 常用命令
 
 ```bash
+# 下载通达信日线数据并转换为 CSV
+python scripts/extract_tdx.py                          # 下载 + 转换全部
+python scripts/extract_tdx.py --download               # 仅下载 zip
+python scripts/extract_tdx.py --force-download         # 强制重新下载
+python scripts/extract_tdx.py --convert                # 仅转换已有 zip
+python scripts/extract_tdx.py --convert --market sh    # 仅转换沪市
+python scripts/extract_tdx.py --convert -v             # 详细进度
+python scripts/extract_tdx.py --convert -w 8           # 指定 8 进程并行
+
 # 运行全部测试（离线 + 在线）
-python run_tests.py
+python scripts/run_tests.py
 
 # 仅离线测试（无需 QMT 客户端）
-python run_tests.py --offline
+python scripts/run_tests.py --offline
 
 # 仅在线测试（需要 QMT 客户端运行中）
-python run_tests.py --online
+python scripts/run_tests.py --online
 
 # 直接运行 AI 策略
-python ai_strategy.py              # 离线模式（模拟数据）
-python ai_strategy.py --live       # 实盘模式（需要 QMT）
+python scripts/ai_strategy.py              # 离线模式（模拟数据）
+python scripts/ai_strategy.py --live       # 实盘模式（需要 QMT）
 
 # 安装依赖
 pip install -r requirements.txt
 ```
 
 ## 架构
-
-```
-run_tests.py          # 测试运行器，所有测试的入口
-qmt_env.py            # QMT 环境检查（xtquant 版本、进程检测、数据服务连接）
-data_fetcher.py       # DataFetcher 类：封装 xtquant 获取 K 线、股票列表、合约详情。同时提供 mock_kline() 用于离线测试
-ai_strategy.py        # ML 管线：特征工程（_make_features）+ offline_predict（模拟数据）+ live_predict（QMT 数据）
-```
 
 ### 关键架构细节
 
@@ -45,7 +69,9 @@ ai_strategy.py        # ML 管线：特征工程（_make_features）+ offline_pr
 ### 数据流
 
 ```
-QMT 客户端 (XtItClient.exe)
+通达信 hsjday.zip → extract_tdx.py → data/{sh,sz,bj}/{code}.csv  （历史数据）
+
+QMT 客户端 (XtItClient.exe)                                    （实时数据）
     ↓ xtdata.connect()
 DataFetcher.get_kline() → pd.DataFrame (OHLCV)
     ↓
@@ -53,6 +79,20 @@ ai_strategy._make_features() → 特征 DataFrame
     ↓
 RandomForestClassifier → 预测结果（涨跌方向 + 置信度）
 ```
+
+### 历史数据获取
+
+通达信日线数据下载地址：https://data.tdx.com.cn/vipdoc/hsjday.zip
+
+运行 `python scripts/extract_tdx.py` 自动下载并转换为独立 CSV 文件，按市场分目录存放：
+
+```
+data/sh/{code}.csv    # 沪市，如 data/sh/600000.csv
+data/sz/{code}.csv    # 深市，如 data/sz/000001.csv
+data/bj/{code}.csv    # 北交所，如 data/bj/430017.csv
+```
+
+每个 CSV 包含字段：`date`, `open`, `high`, `low`, `close`, `volume`, `amount`。
 
 ## Git 提交规范
 
@@ -72,7 +112,7 @@ RandomForestClassifier → 预测结果（涨跌方向 + 置信度）
 
 示例：`feat: 添加动量因子特征` / `fix: 修复 get_kline 日期索引丢失问题`
 
-当用户要求“提交”时，除非特别声明“提交到本地”，则需要提交+推送。
+当用户要求"提交"时，除非特别声明"提交到本地"，则需要提交+推送。
 
 ### xtquant 数据注意事项
 

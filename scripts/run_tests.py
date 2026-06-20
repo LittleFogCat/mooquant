@@ -1,14 +1,14 @@
 """
-quantdemo — 一键测试入口
+quantdemo - 一键测试入口
 
 运行所有测试：
-    python run_tests.py
+    python scripts/run_tests.py
 
 仅运行离线测试（不需要启动 QMT）：
-    python run_tests.py --offline
+    python scripts/run_tests.py --offline
 
 仅运行 QMT 在线测试：
-    python run_tests.py --online
+    python scripts/run_tests.py --online
 """
 
 import sys
@@ -37,21 +37,21 @@ def test_01_env_check():
     result = full_check()
 
     xt = result["xtquant"]
-    print(f"  xtquant  : {'✅ v' + xt['version'] if xt['ok'] else '❌ 未安装'}")
+    print(f"  xtquant  : {'[OK] v' + xt['version'] if xt['ok'] else '[X] 未安装'}")
 
     proc = result["qmt_process"]
-    print(f"  QMT进程  : {'✅ 运行中' if proc['ok'] else '⏸️ 未启动'}")
+    print(f"  QMT进程  : {'[OK] 运行中' if proc['ok'] else '[-] 未启动'}")
 
     ds = result["data_service"]
-    print(f"  数据服务  : {'✅ ' + ds['msg'] if ds['ok'] else '⏸️ ' + ds['msg']}")
+    print(f"  数据服务  : {'[OK] ' + ds['msg'] if ds['ok'] else '[-] ' + ds['msg']}")
 
     ok = xt["ok"]
-    print(f"\n  → 环境状态: {'✅ 就绪' if ok else '❌ 缺失组件'}")
+    print(f"\n  -> 环境状态: {'[OK] 就绪' if ok else '[X] 缺失组件'}")
 
     if ok and proc["ok"]:
-        print("  💡 提示: QMT 已运行，可进行在线测试")
+        print("  [*] QMT 已运行，可进行在线测试")
     elif ok and not proc["ok"]:
-        print("  💡 提示: 请先启动 QMT 客户端再跑在线测试")
+        print("  [*] 请先启动 QMT 客户端再跑在线测试")
 
     return result
 
@@ -61,11 +61,11 @@ def test_02_mock_data():
     header("测试2: 模拟数据生成")
     from data_fetcher import DataFetcher
     df = DataFetcher.mock_kline(100)
-    print(f"  形状: {df.shape[0]} 行 × {df.shape[1]} 列")
+    print(f"  形状: {df.shape[0]} 行 x {df.shape[1]} 列")
     print(f"  字段: {list(df.columns)}")
     print(f"  日期范围: {df['date'].iloc[0].date()} ~ {df['date'].iloc[-1].date()}")
     print(f"  收盘价范围: {df['close'].min():.2f} ~ {df['close'].max():.2f}")
-    print("  ✅ 模拟数据生成成功")
+    print("  [OK] 模拟数据生成成功")
     return {"ok": True, "shape": df.shape}
 
 
@@ -74,7 +74,7 @@ def test_03_ai_model_offline():
     header("测试3: AI 模型离线训练")
     from ai_strategy import offline_predict
     result = offline_predict(show_detail=True)
-    print(f"\n  ✅ AI 策略离线测试完成")
+    print(f"\n  [OK] AI 策略离线测试完成")
     return result
 
 
@@ -85,19 +85,19 @@ def test_04_qmt_data_online():
 
     proc = check_qmt_process()
     if not proc["ok"]:
-        print("  ⏸️ QMT 未运行，跳过在线测试")
+        print("  [-] QMT 未运行，跳过在线测试")
         return {"ok": False, "msg": "QMT not running"}
 
     conn = connect_data()
     if not conn["ok"]:
-        print(f"  ❌ 数据服务连接失败: {conn['msg']}")
+        print(f"  [X] 数据服务连接失败: {conn['msg']}")
         return conn
 
     from qmt_env import get_markets
     markets = get_markets()
     if markets["ok"]:
         market_list = ", ".join(f"{k}({v})" for k, v in markets["markets"].items()[:8])
-        print(f"  ✅ 已连接，支持市场: {market_list}...")
+        print(f"  [OK] 已连接，支持市场: {market_list}...")
     return markets
 
 
@@ -108,9 +108,9 @@ def main():
     group.add_argument("--online", action="store_true", help="仅跑在线测试（需 QMT）")
     args = parser.parse_args()
 
-    print("╔══════════════════════════════════════════════╗")
-    print("║         QuantDemo — AI 量化测试套件          ║")
-    print("╚══════════════════════════════════════════════╝")
+    print("=" * 50)
+    print("  QuantDemo - AI 量化测试套件")
+    print("=" * 50)
 
     if args.online:
         test_01_env_check()

@@ -9,4 +9,7 @@ venv/
 .idea/
 .vscode/
 *.log
-.claude/
+.claude/settings*.json
+.claude/worktrees/
+tmp/
+data/

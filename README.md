@@ -5,24 +5,54 @@
 ## 快速开始
 
 ```bash
-# 1. 先启动 QMT 客户端（桌面快捷方式）
-#    国金QMT交易端模拟.lnk → D:\国金QMT交易端模拟\bin.x64\XtItClient.exe
+# 1. 下载并提取通达信历史数据
+python scripts/extract_tdx.py
 
 # 2. 运行测试
-python run_tests.py
+python scripts/run_tests.py
 ```
 
 ## 项目结构
 
 ```
 quantdemo/
-├── run_tests.py           # 主测试入口（一键运行）
-├── qmt_env.py             # QMT 连接 + 环境检测
-├── data_fetcher.py        # 行情数据获取工具
-├── ai_strategy.py         # AI 选股策略（ML模型）
-├── requirements.txt       # 依赖
-└── README.md
+├── SKILL.md                   # Claude Code skill 定义
+├── CLAUDE.md
+├── README.md
+├── requirements.txt
+├── scripts/
+│   ├── extract_tdx.py         # 通达信 zip → CSV
+│   ├── tdx_reader.py          # .day 解析器
+│   ├── data_fetcher.py        # QMT 数据获取
+│   ├── ai_strategy.py         # AI 策略（ML）
+│   ├── qmt_env.py             # QMT 环境检测
+│   └── run_tests.py           # 测试入口
+├── data/
+│   ├── sh/                    # 沪市，如 600000.csv
+│   ├── sz/                    # 深市，如 000001.csv
+│   └── bj/                    # 北交所，如 430017.csv
+└── tmp/                       # zip + 解压文件
 ```
+
+## 数据获取
+
+### 通达信历史日线数据
+
+```bash
+# 下载 + 转换（一步到位）
+python scripts/extract_tdx.py
+
+# 仅下载
+python scripts/extract_tdx.py --download
+
+# 仅转换已有 zip
+python scripts/extract_tdx.py --convert
+
+# 仅转换沪市，显示详细进度
+python scripts/extract_tdx.py --convert --market sh -v
+```
+
+输出结构：`data/{market}/{code}.csv`，每个 CSV 包含 `date`, `open`, `high`, `low`, `close`, `volume`, `amount`。
 
 ## 测试清单
 

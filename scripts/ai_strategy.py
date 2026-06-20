@@ -98,14 +98,14 @@ def offline_predict(show_detail: bool = True) -> dict:
 
     if show_detail:
         cm = confusion_matrix(y_test, y_pred)
-        print(f"🎯 模型准确率: {acc:.2%}")
-        print(f"📊 训练样本: {len(X_train)}, 测试样本: {len(X_test)}")
+        print(f"[模型准确率] {acc:.2%}")
+        print(f"[训练样本] {len(X_train)}, [测试样本] {len(X_test)}")
         print()
-        print("📈 特征重要性排序:")
+        print("[特征重要性排序]")
         for feat, imp in importance:
             print(f"   {feat:15s}  {imp:.4f}")
         print()
-        print("📋 混淆矩阵:")
+        print("[混淆矩阵]")
         print(f"          预测跌  预测涨")
         print(f" 实际跌    {cm[0][0]:5d}   {cm[0][1]:5d}")
         print(f" 实际涨    {cm[1][0]:5d}   {cm[1][1]:5d}")
@@ -155,13 +155,13 @@ def live_predict(stock_code: str = "000001.SZ") -> dict:
     result = {
         "ok": True,
         "stock": stock_code,
-        "prediction": "上涨 📈" if pred == 1 else "下跌 📉",
+        "prediction": "上涨" if pred == 1 else "下跌",
         "confidence": round(float(max(prob)), 4),
         "latest_close": round(float(detail["close"]), 2),
         "features": {col: round(float(detail[col]), 4) for col in feature_cols},
     }
 
-    print(f"🔮 {stock_code} 最新预测: {result['prediction']}")
+    print(f"[{stock_code}] 最新预测: {result['prediction']}")
     print(f"   置信度: {result['confidence']:.2%}")
     print(f"   最新收盘价: {result['latest_close']}")
     print(f"   特征值: {result['features']}")
