@@ -71,7 +71,8 @@ class StockSelector:
         codes = []
         for f in files:
             code = os.path.splitext(os.path.basename(f))[0]
-            suffix = ".SH" if market in ("sh", "SH") else ".SZ"
+            suffix_map = {"sh": ".SH", "SH": ".SH", "sz": ".SZ", "SZ": ".SZ", "bj": ".BJ", "BJ": ".BJ"}
+            suffix = suffix_map.get(market, ".SZ")
             codes.append(f"{code}{suffix}")
         self.stock_pool = codes
         return codes

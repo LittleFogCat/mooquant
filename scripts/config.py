@@ -233,7 +233,7 @@ if __name__ == "__main__":
     print(f"模型目录:   {config.models_dir}")
     print(f"报告目录:   {config.report.dir}")
     print(f"日志目录:   {config.log.dir}")
-    print(f"QLIB 路径:  {config.qmt.xtquant_path}")
+    print(f"QMT 路径:   {config.qmt.xtquant_path}")
     print(f"特征列:     {config.features.base}")
     print(f"模型:       {config.model.name} (n={config.model.n_estimators})")
 

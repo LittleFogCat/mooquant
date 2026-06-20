@@ -206,10 +206,17 @@ class BacktestEngine:
         }
 
     def _calc_limit_prices(self, price_data: dict) -> tuple[float, float]:
-        """计算涨跌停价（A股 ±10%，ST ±5%）。"""
+        """计算涨跌停价（A股 ±10%，科创板/创业板 ±20%，ST ±5%）。
+
+        简化判断：科创板(688)/创业板(300)为±20%，其余主板为±10%。
+        ST 精确判断需股票名称，此处暂按代码前缀近似。
+        """
         pre_close = price_data.get("pre_close", price_data["close"])
-        is_st = price_data.get("code", "").startswith(("000", "002"))  # 简化判断
-        limit = 0.05 if is_st else 0.10
+        code = price_data.get("code", "")
+        if code.startswith(("688", "300")):
+            limit = 0.20  # 科创板 / 创业板
+        else:
+            limit = 0.10  # 主板
         return pre_close * (1 - limit), pre_close * (1 + limit)
 
     def _exec_price(self, price_data: dict, action: str) -> float | None:

@@ -86,11 +86,10 @@ def step_select_stocks() -> dict | None:
         from selector import StockSelector
         selector = StockSelector()
         # 从 CSV 目录加载股票池
-        for market in ["sh", "sz"]:
+        for market in ["sh", "sz", "bj"]:
             mkt_dir = os.path.join(config.data.root, market)
             if os.path.isdir(mkt_dir) and os.listdir(mkt_dir):
                 selector.load_stock_pool_from_csv(config.data.root, market)
-                break
 
         if not selector.stock_pool:
             logger.warning("股票池为空，跳过选股")
