@@ -15,16 +15,30 @@ quantdemo/
 ├── README.md
 ├── requirements.txt
 ├── scripts/
+│   ├── install_xtquant.py       # xtquant 安装/升级工具
 │   ├── extract_tdx.py           # 通达信日线 zip → CSV 提取
 │   ├── tdx_reader.py            # 通达信 .day 文件解析器
 │   ├── data_fetcher.py          # QMT 行情数据获取
-│   ├── ai_strategy.py           # AI 选股策略（ML 管线）
+│   ├── data_validator.py        # 数据质量校验（停牌/异常值/缺失交易日）
+│   ├── fundamental.py           # 基本面数据接入（换手率/PE/PB/市值）
+│   ├── features.py              # 扩展特征工程（RSI/MACD/KDJ/布林带/ATR）
+│   ├── ai_strategy.py           # AI 选股策略（ML 管线 + 模型持久化）
+│   ├── backtest.py              # Walk-forward 回测 + 评估指标
+│   ├── signals.py               # 信号生成（buy/hold/sell + 冷却期）
+│   ├── selector.py              # Top-N 选股器
+│   ├── config.py                # 项目配置中心（YAML 覆盖）
+│   ├── run_daily.py             # 每日自动流水线
+│   ├── trader.py                # QMT 交易接口封装 + Dry-run
+│   ├── risk.py                  # 风控闸门（仓位/止损/熔断）
 │   ├── qmt_env.py               # QMT 环境检测与连接
 │   └── run_tests.py             # 测试运行器
 ├── data/
 │   ├── sh/                      # 沪市 CSV（600000.csv, ...）
 │   ├── sz/                      # 深市 CSV（000001.csv, ...）
 │   └── bj/                      # 北交所 CSV（430017.csv, ...）
+├── models/                      # 模型持久化目录（joblib + JSON 元数据）
+├── reports/                     # 每日报告输出
+├── logs/                        # 日志文件
 └── tmp/                         # 临时文件（hsjday.zip 等）
 ```
 
@@ -57,11 +71,44 @@ python scripts/ai_strategy.py --live       # 实盘模式（需要 QMT）
 pip install -r requirements.txt
 ```
 
+## xtquant 安装与升级
+
+xtquant 是迅投（thinktrader）/ 国金证券 QMT 的 Python SDK，**不是 PyPI 包，不能通过 pip 安装**。
+
+下载页面：https://dict.thinktrader.net/nativeApi/download_xtquant.html
+
+```bash
+# 自动下载最新版并安装（需要 7-Zip 解压 RAR）
+python scripts/install_xtquant.py
+
+# 从本地 RAR 安装
+python scripts/install_xtquant.py --rar path/to/xtquant_250807.rar
+
+# 查看当前状态
+python scripts/install_xtquant.py --status
+
+# 回滚到上一版本
+python scripts/install_xtquant.py --rollback
+```
+
+安装流程：
+1. 从官方页面解析最新 RAR 下载链接（页面是 VuePress SPA，链接内嵌在 `<script>` 标签中，格式 `/packages/xtquant_XXXXXX.rar`）
+2. 下载 RAR 文件到临时目录
+3. 用 7-Zip 解压（`C:\Program Files\7-Zip\7z.exe`）
+4. 备份旧版 `xtquant/` → `xtquant.bak/`
+5. 替换 `D:\software\python\Lib\site-packages\xtquant/`
+6. 验证导入成功
+
+关键约束：
+- xtquant 安装在系统 Python 的 `D:\software\python\Lib\site-packages`，而非项目 venv
+- 每个使用 xtquant 的脚本都必须 `sys.path.insert(0, r"D:\software\python\Lib\site-packages")`
+- 在线数据/交易功能需要 QMT 客户端 `XtItClient.exe` 在后台运行
+- 当前安装版本：`xtquant_250807`（2025-12-19 发布）
+
 ## 架构
 
 ### 关键架构细节
 
-- **xtquant 未安装在项目 venv 中** — 它位于 `D:\software\python\Lib\site-packages`。每个使用 xtquant 的模块都通过 `sys.path.insert(0, ...)` 注入此路径。如果你新增了导入 xtquant 的模块，也必须做同样的处理。
 - **在线数据操作需要 QMT 客户端运行**（`XtItClient.exe`）。桌面快捷方式位于 `D:\国金QMT交易端模拟\bin.x64\XtItClient.exe`。离线测试使用 `DataFetcher.mock_kline()`，通过 NumPy 生成模拟的 OHLCV 数据。
 - `DataFetcher.connect()` 是惰性的 — `get_kline()` 会在未连接时自动连接，因此调用方不需要显式调用 connect。
 - `ai_strategy._make_features()` 在离线预测和实盘预测路径中共享。它期望传入一个包含以下列的 DataFrame：`date`、`open`、`high`、`low`、`close`、`volume`。输出 8 个特征列 + 1 个二分类 `label`（未来 5 日收益率 > 0）。
@@ -78,6 +125,10 @@ DataFetcher.get_kline() → pd.DataFrame (OHLCV)
 ai_strategy._make_features() → 特征 DataFrame
     ↓
 RandomForestClassifier → 预测结果（涨跌方向 + 置信度）
+    ↓
+signals.py → signals → selector.py → Top-N 选股
+    ↓
+backtest.py（回测验证） / trader.py（实盘交易）+ risk.py（风控闸门）
 ```
 
 ### 历史数据获取
