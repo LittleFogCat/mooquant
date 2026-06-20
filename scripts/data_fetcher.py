@@ -43,8 +43,9 @@ class DataFetcher:
             self.connect()
 
         dt_map = {"none": 0, "front": 1, "back": 2}
+        fields = ["time", "open", "high", "low", "close", "volume", "amount"]
         raw = xtdata.get_market_data(
-            ["open", "high", "low", "close", "volume", "amount"],
+            fields,
             [stock_code],
             period=period,
             count=count,
@@ -61,7 +62,42 @@ class DataFetcher:
 
         df = pd.DataFrame(records)
         df["code"] = stock_code
-        df["date"] = pd.Timestamp.now().normalize() - pd.Timedelta(days=count)
+
+        # ── 提取真实交易日期 ──────────────────────────────────────
+        time_arr = raw.get("time", {}).get(stock_code, [])
+        if time_arr and len(time_arr) > 0:
+            # timetag_to_datetime 将毫秒时间戳转为格式化字符串
+            df["date"] = [
+                pd.Timestamp(xtdata.timetag_to_datetime(int(t), "%Y%m%d"))
+                for t in time_arr
+            ]
+        else:
+            # 回退：从交易日历获取（毫秒时间戳）
+            try:
+                import datetime as _dt
+                today = _dt.date.today()
+                start = today - _dt.timedelta(days=count * 3)
+                market = "SH" if stock_code.startswith(("6", "9")) else "SZ"
+                trading_dates = xtdata.get_trading_dates(
+                    market,
+                    start_time=start.strftime("%Y%m%d"),
+                    end_time=today.strftime("%Y%m%d"),
+                    count=count,
+                )
+                if trading_dates:
+                    df["date"] = [pd.Timestamp(int(d), unit="ms").normalize()
+                                  for d in trading_dates]
+                else:
+                    raise ValueError("no trading dates returned")
+            except Exception:
+                # 最后回退：从今天往前推 count 天（非连续非交易日）
+                import datetime as _dt
+                today = _dt.datetime.now()
+                df["date"] = [
+                    today - _dt.timedelta(days=count - i)
+                    for i in range(count)
+                ]
+
         return df
 
     # ── 全市场股票列表 ──────────────────────────────────────────

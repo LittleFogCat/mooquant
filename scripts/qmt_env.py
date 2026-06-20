@@ -37,7 +37,7 @@ def check_qmt_process() -> dict:
 
 
 # ── 连接数据服务 ─────────────────────────────────────────────────
-def connect_data(timeout_sec: int = 5) -> dict:
+def connect_data() -> dict:
     """连接 QMT 数据服务（需先启动 QMT 客户端）"""
     try:
         from xtquant import xtdata
