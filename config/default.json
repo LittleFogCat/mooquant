@@ -1,0 +1,21 @@
+{
+  "dataSource": "qmt",
+  "cache": {
+    "ttlMs": 5000
+  },
+  "qmt": {
+    "python": "python",
+    "bridgeScript": "bridge/qmt_server.py",
+    "requestTimeoutMs": 3000,
+    "defaultHost": "127.0.0.1",
+    "defaultPort": 58620
+  },
+  "window": {
+    "width": 980,
+    "height": 720,
+    "minWidth": 720,
+    "minHeight": 540,
+    "titleBarStyle": "hiddenInset"
+  },
+  "tradeSource": "mock"
+}

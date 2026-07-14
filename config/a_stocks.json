@@ -1,0 +1,182 @@
+[
+  {
+    "code": "sh600519",
+    "name": "贵州茅台",
+    "industry": "白酒",
+    "base": 1680.5
+  },
+  {
+    "code": "sz000001",
+    "name": "平安银行",
+    "industry": "银行",
+    "base": 12.34
+  },
+  {
+    "code": "sh601318",
+    "name": "中国平安",
+    "industry": "保险",
+    "base": 48.2
+  },
+  {
+    "code": "sz300750",
+    "name": "宁德时代",
+    "industry": "新能源",
+    "base": 198.76
+  },
+  {
+    "code": "sh600036",
+    "name": "招商银行",
+    "industry": "银行",
+    "base": 35.12
+  },
+  {
+    "code": "sz000858",
+    "name": "五粮液",
+    "industry": "白酒",
+    "base": 142.88
+  },
+  {
+    "code": "sh600276",
+    "name": "恒瑞医药",
+    "industry": "医药",
+    "base": 45.3
+  },
+  {
+    "code": "sz000651",
+    "name": "格力电器",
+    "industry": "家电",
+    "base": 38.5
+  },
+  {
+    "code": "sh600887",
+    "name": "伊利股份",
+    "industry": "食品",
+    "base": 28.6
+  },
+  {
+    "code": "sz002594",
+    "name": "比亚迪",
+    "industry": "汽车",
+    "base": 245.8
+  },
+  {
+    "code": "sh600030",
+    "name": "中信证券",
+    "industry": "证券",
+    "base": 22.15
+  },
+  {
+    "code": "sz000333",
+    "name": "美的集团",
+    "industry": "家电",
+    "base": 65.4
+  },
+  {
+    "code": "sh601012",
+    "name": "隆基绿能",
+    "industry": "光伏",
+    "base": 22.8
+  },
+  {
+    "code": "sz002475",
+    "name": "立讯精密",
+    "industry": "电子",
+    "base": 38.9
+  },
+  {
+    "code": "sh600900",
+    "name": "长江电力",
+    "industry": "电力",
+    "base": 28.5
+  },
+  {
+    "code": "sz000725",
+    "name": "京东方A",
+    "industry": "电子",
+    "base": 4.35
+  },
+  {
+    "code": "sh601888",
+    "name": "中国中免",
+    "industry": "旅游",
+    "base": 85.6
+  },
+  {
+    "code": "sz300059",
+    "name": "东方财富",
+    "industry": "证券",
+    "base": 14.8
+  },
+  {
+    "code": "sh600809",
+    "name": "山西汾酒",
+    "industry": "白酒",
+    "base": 220.5
+  },
+  {
+    "code": "sz002714",
+    "name": "牧原股份",
+    "industry": "养殖",
+    "base": 45.6
+  },
+  {
+    "code": "sh601398",
+    "name": "工商银行",
+    "industry": "银行",
+    "base": 5.8
+  },
+  {
+    "code": "sh601288",
+    "name": "农业银行",
+    "industry": "银行",
+    "base": 4.2
+  },
+  {
+    "code": "sh601857",
+    "name": "中国石油",
+    "industry": "石油",
+    "base": 8.5
+  },
+  {
+    "code": "sh600028",
+    "name": "中国石化",
+    "industry": "石油",
+    "base": 6.8
+  },
+  {
+    "code": "sz002241",
+    "name": "歌尔股份",
+    "industry": "电子",
+    "base": 25.3
+  },
+  {
+    "code": "sh688981",
+    "name": "中芯国际",
+    "industry": "半导体",
+    "base": 58.4
+  },
+  {
+    "code": "sz300760",
+    "name": "迈瑞医疗",
+    "industry": "医疗器械",
+    "base": 295.6
+  },
+  {
+    "code": "sh603259",
+    "name": "药明康德",
+    "industry": "医药",
+    "base": 65.8
+  },
+  {
+    "code": "sz002415",
+    "name": "海康威视",
+    "industry": "安防",
+    "base": 32.5
+  },
+  {
+    "code": "sh600585",
+    "name": "海螺水泥",
+    "industry": "建材",
+    "base": 25.8
+  }
+]

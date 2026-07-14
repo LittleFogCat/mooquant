@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>mookquant · 量化交易系统</title>
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/app.css" />
+  <link rel="stylesheet" href="vendor/flatpickr.min.css" />
+</head>
+<body>
+  <div class="background-gradient"></div>
+  <div class="titlebar-drag-region"></div>
+
+  <div class="app-layout">
+    <nav class="sidebar" id="navBar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">MQ</div>
+        <div class="sidebar-title">mookquant</div>
+      </div>
+      <ul class="nav-list">
+        <li class="nav-item active" data-page="quote"><span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span><span class="nav-label">行情</span></li>
+        <li class="nav-item" data-page="strategy"><span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11H5a2 2 0 0 0-2 2v7h6V11z"/><path d="M15 7h-4v13h4V7z"/><path d="M21 3h-4v17h4V3z"/></svg></span><span class="nav-label">策略</span></li>
+        <li class="nav-item" data-page="backtest"><span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 14 4-4 4 4 5-5"/></svg></span><span class="nav-label">回测</span></li>
+        <li class="nav-item" data-page="trade"><span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></span><span class="nav-label">交易</span></li>
+        <li class="nav-item" data-page="settings"><span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span class="nav-label">设置</span></li>
+      </ul>
+      <div class="sidebar-footer">
+        <div class="qmt-status" id="qmtStatus">
+          <span class="status-dot mock"></span>
+          <span class="status-text">检测中...</span>
+        </div>
+        <div class="app-version">v0.2.0</div>
+      </div>
+    </nav>
+
+    <main class="content-area">
+      <section class="page page-active" id="page-quote">
+        <header class="page-header"><h1 class="page-title">行情查询</h1><p class="page-subtitle">输入股票代码或名称，获取实时行情</p></header>
+        <div class="search-card" id="searchPanel"></div>
+        <div class="quote-layout"><div class="quote-main"><div id="result" class="result-area"></div><div id="klinePanel" class="kline-card"></div></div><aside class="quote-sidebar"><div class="card"><div class="card-title">⭐ 自选股</div><div id="watchlistPanel"></div></div></aside></div>
+        <div id="status" class="status hidden"></div>
+      </section>
+      <section class="page" id="page-strategy">
+        <header class="page-header"><h1 class="page-title">策略管理</h1><p class="page-subtitle">创建、编辑和管理交易策略</p></header>
+        <div id="strategyContainer"></div>
+      </section>
+      <section class="page" id="page-backtest">
+        <header class="page-header"><h1 class="page-title">策略回测</h1><p class="page-subtitle">用历史数据验证策略表现</p></header>
+        <div id="backtestContainer"></div>
+      </section>
+      <section class="page" id="page-trade">
+        <header class="page-header"><h1 class="page-title">交易</h1><p class="page-subtitle">下单、持仓与账户管理</p></header>
+        <div id="tradeContainer"></div>
+      </section>
+      <section class="page" id="page-settings">
+        <header class="page-header"><h1 class="page-title">设置</h1><p class="page-subtitle">数据源与交易配置</p></header>
+        <div id="settingsContainer"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="vendor/echarts.min.js"></script>
+  <script src="vendor/flatpickr.min.js"></script>
+  <script src="vendor/flatpickr.zh.js"></script>
+  <script src="js/services/facade.js"></script>
+  <script src="js/router.js"></script>
+  <script src="js/viewmodels/quote-viewmodel.js"></script>
+  <script src="js/views/search-panel.js"></script>
+  <script src="js/views/result-card.js"></script>
+  <script src="js/views/status-toast.js"></script>
+  <script src="js/views/kline-view.js"></script>
+  <script src="js/viewmodels/watchlist-viewmodel.js"></script>
+  <script src="js/views/watchlist-view.js"></script>
+  <script src="js/viewmodels/strategy-viewmodel.js"></script>
+  <script src="js/views/strategy-view.js"></script>
+  <script src="js/viewmodels/backtest-viewmodel.js"></script>
+  <script src="js/views/backtest-view.js"></script>
+  <script src="js/viewmodels/trade-viewmodel.js"></script>
+  <script src="js/views/trade-view.js"></script>
+  <script src="js/viewmodels/settings-viewmodel.js"></script>
+  <script src="js/views/settings-view.js"></script>
+  <script src="js/bootstrap.js"></script>
+</body>
+</html>

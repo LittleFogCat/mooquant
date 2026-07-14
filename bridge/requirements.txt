@@ -1,0 +1,13 @@
+# 迅投 QMT Python 桥依赖
+#
+# 安装：
+#   pip install -r requirements.txt
+#
+# 真实接入：
+#   xtquant 由国金证券通过 miniQMT 客户端分发，
+#   一般通过国金交易客户端的安装目录下的 site-packages 引入，
+#   或者：
+#   pip install xtquant
+#
+# 安装好后请解除 bridge/qmt_server.py 中的 TODO 并填入真实数据来源
+xtquant>=1.0

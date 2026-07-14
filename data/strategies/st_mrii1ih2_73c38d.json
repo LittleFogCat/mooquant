@@ -1,0 +1,17 @@
+{
+  "id": "st_mrii1ih2_73c38d",
+  "name": "333",
+  "description": "333",
+  "type": "ma_cross",
+  "symbols": [
+    "600036"
+  ],
+  "params": {
+    "fast": 5,
+    "slow": 20,
+    "stopLoss": 0.05
+  },
+  "status": "draft",
+  "createdAt": "2026-07-13T00:43:48.038Z",
+  "updatedAt": "2026-07-13T00:43:48.038Z"
+}

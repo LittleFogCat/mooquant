@@ -1,0 +1,44 @@
+{
+  "name": "mookquant",
+  "version": "0.1.0",
+  "description": "苹果设计风格的量化投资桌面应用，基于 Electron + MVVM 分层架构",
+  "main": "main.js",
+  "author": "mookquant",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging",
+    "bridge:install": "cd bridge && pip install -r requirements.txt",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.mookquant.desktop",
+    "productName": "mookquant",
+    "files": [
+      "main.js",
+      "preload.js",
+      "config/**",
+      "main/**",
+      "renderer/**",
+      "assets/**"
+    ],
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "target": ["nsis", "portable"]
+    },
+    "linux": {
+      "target": ["AppImage", "deb"]
+    }
+  }
+}

@@ -1,0 +1,34 @@
+﻿# 依赖
+node_modules/
+.venv/
+.npm-cache/
+
+# 打包输出
+dist/
+out/
+build/
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 日志
+*.log
+npm-debug.log*
+
+# 环境
+.env
+.env.local
+
+# 临时
+*.tmp
+.cache/
+*.out
+verify_output.txt
+_chk.js
+_p.js
+
+# Python
+__pycache__/

@@ -1,0 +1,39 @@
+/**
+ * mookquant · IPC 路由
+ */
+function registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager }) {
+  const { ipcMain } = require("electron");
+  // ---- 行情 ----
+  ipcMain.handle("quote:query", async (_e, s) => quoteService.query(s));
+  ipcMain.handle("quote:info", async () => ({ mode: quoteService.source.mode, description: quoteService.source.description }));
+  ipcMain.handle("quote:history", async (_e, s, p, c) => quoteService.getHistory(s, p, c));
+    ipcMain.handle("quote:search", async (_e, q) => quoteService.search(q));
+  ipcMain.handle("quote:status", async () => quoteService.getStatus());
+  // ---- App ----
+  ipcMain.handle("app:info", async () => { const { app } = require("electron"); return { name: app.getName(), version: app.getVersion(), platform: process.platform }; });
+  // ---- 策略 ----
+  if (strategyService) {
+    ipcMain.handle("strategy:list", async () => { try { return { ok: true, data: await strategyService.list() }; } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("strategy:get", async (_e, id) => { try { return { ok: true, data: await strategyService.getById(id) }; } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("strategy:create", async (_e, p) => { try { return { ok: true, data: await strategyService.create(p) }; } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("strategy:update", async (_e, id, p) => { try { return { ok: true, data: await strategyService.update(id, p) }; } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("strategy:delete", async (_e, id) => { try { await strategyService.remove(id); return { ok: true, data: { id } }; } catch (e) { return { ok: false, error: e.message }; } });
+  }
+  // ---- 回测 ----
+  if (backtestService) { ipcMain.handle("backtest:run", async (_e, c) => { try { return await backtestService.run(c); } catch (e) { return { ok: false, error: e.message }; } }); }
+  // ---- 交易 ----
+  if (tradeService) {
+    ipcMain.handle("trade:info", async () => ({ ok: true, data: tradeService.info }));
+    ipcMain.handle("trade:placeOrder", async (_e, o) => tradeService.placeOrder(o));
+    ipcMain.handle("trade:cancelOrder", async (_e, id) => tradeService.cancelOrder(id));
+    ipcMain.handle("trade:positions", async () => tradeService.getPositions());
+    ipcMain.handle("trade:orders", async () => tradeService.getOrders());
+    ipcMain.handle("trade:account", async () => tradeService.getAccount());
+  }
+  // ---- 设置 ----
+  if (configManager) {
+    ipcMain.handle("settings:get", async () => configManager.get());
+    ipcMain.handle("settings:set", async (_e, patch) => configManager.set(patch));
+  }
+}
+module.exports = { registerIpc };
