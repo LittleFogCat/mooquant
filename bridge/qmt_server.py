@@ -344,6 +344,255 @@ def handle_quote_subscribe(params):
     return {"subscribed": True}
 
 
+
+# ----------------------------------------------------------------------
+# 交易连接（独立于行情）
+# ----------------------------------------------------------------------
+_TRADER = None
+_TRADER_ACC = None
+_TRADER_LOCK = threading.Lock()
+
+
+def ensure_trader():
+    """初始化交易连接：XtQuantTrader + 登录 + 订阅账号"""
+    global _TRADER, _TRADER_ACC
+    if _TRADER is not None:
+        return _TRADER, _TRADER_ACC
+
+    import os as _os
+    import time as _time
+
+    ensure_xtquant()  # 确保 xtquant 已加载
+
+    from xtquant.xttrader import XtQuantTrader, XtQuantTraderCallback
+    from xtquant.xttype import StockAccount
+
+    path = _os.environ.get("QMT_PATH", "")
+    if not path:
+        raise RuntimeError("未配置 QMT_PATH（miniQMT userdata 目录）")
+
+    account_id = _os.environ.get("QMT_ACCOUNT_ID", "")
+    account_type = _os.environ.get("QMT_ACCOUNT_TYPE", "STOCK")
+    if not account_id:
+        raise RuntimeError("未配置 QMT_ACCOUNT_ID")
+
+    session_id = int(_time.time())
+
+    class _TraderCallback(XtQuantTraderCallback):
+        def on_disconnected(self):
+            log("交易连接断开")
+
+        def on_stock_order(self, order):
+            log("委托回报: {} status={} msg={}".format(
+                order.stock_code, order.order_status, order.status_msg))
+
+        def on_stock_trade(self, trade):
+            log("成交回报: {} price={} volume={}".format(
+                trade.stock_code, trade.traded_price, trade.traded_volume))
+
+        def on_order_error(self, order_error):
+            log("委托失败: {} {}".format(
+                order_error.order_remark, order_error.error_msg))
+
+        def on_cancel_error(self, cancel_error):
+            log("撤单失败: {}".format(cancel_error))
+
+    with _TRADER_LOCK:
+        if _TRADER is not None:
+            return _TRADER, _TRADER_ACC
+
+        trader = XtQuantTrader(path, session_id)
+        trader.register_callback(_TraderCallback())
+        trader.start()
+
+        connect_result = trader.connect()
+        if connect_result != 0:
+            raise RuntimeError("交易连接失败，错误码: {}".format(connect_result))
+
+        acc = StockAccount(account_id, account_type)
+        subscribe_result = trader.subscribe(acc)
+        if subscribe_result != 0:
+            raise RuntimeError("账号订阅失败，错误码: {}".format(subscribe_result))
+
+        _TRADER = trader
+        _TRADER_ACC = acc
+        log("交易连接成功: account={} type={}".format(account_id, account_type))
+
+    return _TRADER, _TRADER_ACC
+
+
+def _from_xtcode(xt_code):
+    """600519.SH -> sh600519"""
+    if not xt_code:
+        return ""
+    head, _, market = xt_code.upper().partition(".")
+    market = market.lower()
+    if market in ("sh", "sz", "bj"):
+        return market + head
+    return xt_code
+
+
+_ORDER_STATUS_MAP = {
+    48: "pending",    # 委托中
+    49: "pending",    # 部分成交
+    50: "filled",     # 全部成交
+    51: "partial",    # 部分撤单
+    52: "cancelled",  # 全部撤单
+    53: "rejected",   # 委托失败
+    55: "cancelled",  # 部分成交后撤单
+}
+
+
+def _map_order_status(status):
+    return _ORDER_STATUS_MAP.get(status, "unknown")
+
+
+# ----------------------------------------------------------------------
+# 交易方法
+# ----------------------------------------------------------------------
+
+def handle_trade_connect(params):
+    """连接交易服务器，返回账号信息"""
+    trader, acc = ensure_trader()
+    return {"connected": True, "accountId": acc.account_id}
+
+
+def handle_trade_order(params):
+    """下单"""
+    from xtquant import xtconstant
+
+    trader, acc = ensure_trader()
+
+    code = to_xtcode(params.get("symbol", ""))
+    if not code:
+        raise ValueError("symbol 不能为空")
+
+    side = params.get("side", "buy")
+    quantity = int(params.get("quantity", 0))
+    if quantity <= 0:
+        raise ValueError("quantity 必须大于 0")
+
+    order_type = params.get("orderType", "market")
+    price = float(params.get("price", 0) or 0)
+
+    xt_order_type = xtconstant.STOCK_BUY if side == "buy" else xtconstant.STOCK_SELL
+    if order_type == "limit":
+        xt_price_type = xtconstant.FIX_PRICE
+        if price <= 0:
+            raise ValueError("限价单 price 必须大于 0")
+    else:
+        xt_price_type = xtconstant.LATEST_PRICE
+        price = -1  # 市价单 price 传 -1
+
+    seq = trader.order_stock(
+        acc, code, xt_order_type, quantity, xt_price_type, price,
+        "mookquant", "")
+
+    log("下单: {} {} {} qty={} type={} price={}".format(
+        side, code, quantity, order_type, price))
+    return {"orderId": str(seq), "status": "submitted"}
+
+
+def handle_trade_cancel(params):
+    """撤单"""
+    trader, acc = ensure_trader()
+
+    order_id = params.get("orderId", "")
+    if not order_id:
+        raise ValueError("orderId 不能为空")
+
+    trader.cancel_order_stock(acc, order_id)
+    log("撤单: {}".format(order_id))
+    return {"success": True}
+
+
+def handle_trade_positions(params):
+    """查持仓"""
+    trader, acc = ensure_trader()
+    positions = trader.query_stock_positions(acc) or []
+
+    result = []
+    for p in positions:
+        volume = getattr(p, "volume", 0) or 0
+        open_price = getattr(p, "open_price", 0) or 0
+        market_value = getattr(p, "market_value", 0) or 0
+        profit = getattr(p, "profit", 0) or 0
+
+        current_price = (market_value / volume) if volume else 0
+        cost = open_price * volume if open_price else 0
+        pnl_pct = ((current_price - open_price) / open_price * 100) if open_price else 0
+
+        result.append({
+            "symbol": _from_xtcode(getattr(p, "stock_code", "")),
+            "name": getattr(p, "stock_code", ""),
+            "quantity": volume,
+            "canUseVolume": getattr(p, "can_use_volume", 0) or 0,
+            "costPrice": round(open_price, 4),
+            "currentPrice": round(current_price, 4),
+            "marketValue": round(market_value, 2),
+            "pnl": round(profit, 2),
+            "pnlPct": round(pnl_pct, 2),
+        })
+
+    log("查询持仓: {} 条".format(len(result)))
+    return result
+
+
+def handle_trade_orders(params):
+    """查当日委托"""
+    from xtquant import xtconstant
+
+    trader, acc = ensure_trader()
+    orders = trader.query_stock_orders(acc) or []
+
+    result = []
+    for o in orders:
+        order_type = getattr(o, "order_type", 0)
+        price_type = getattr(o, "price_type", 0)
+        side = "buy" if order_type == xtconstant.STOCK_BUY else "sell"
+
+        result.append({
+            "orderId": str(getattr(o, "order_id", "")),
+            "sysId": str(getattr(o, "order_sysid", "")),
+            "symbol": _from_xtcode(getattr(o, "stock_code", "")),
+            "side": side,
+            "price": round(getattr(o, "price", 0) or 0, 4),
+            "quantity": getattr(o, "order_volume", 0) or 0,
+            "filledQuantity": getattr(o, "traded_volume", 0) or 0,
+            "filledPrice": round(getattr(o, "traded_price", 0) or 0, 4),
+            "orderType": "limit" if price_type == xtconstant.FIX_PRICE else "market",
+            "status": _map_order_status(getattr(o, "order_status", 0)),
+            "statusMsg": getattr(o, "status_msg", ""),
+            "createdAt": str(getattr(o, "order_time", "")),
+        })
+
+    log("查询委托: {} 条".format(len(result)))
+    return result
+
+
+def handle_trade_account(params):
+    """查资金"""
+    trader, acc = ensure_trader()
+    asset = trader.query_stock_asset(acc)
+
+    if not asset:
+        return {"totalAssets": 0, "available": 0, "marketValue": 0, "totalPnl": 0}
+
+    cash = getattr(asset, "cash", 0) or 0
+    frozen = getattr(asset, "frozen_cash", 0) or 0
+    market_value = getattr(asset, "market_value", 0) or 0
+    total_asset = getattr(asset, "total_asset", 0) or 0
+
+    log("查询资金: total={} cash={} market={}".format(total_asset, cash, market_value))
+    return {
+        "totalAssets": round(total_asset, 2),
+        "available": round(cash, 2),
+        "frozen": round(frozen, 2),
+        "marketValue": round(market_value, 2),
+        "totalPnl": 0,
+    }
+
+
 # ----------------------------------------------------------------------
 # 调度
 # ----------------------------------------------------------------------
@@ -352,6 +601,12 @@ METHOD_MAP = {
     "quote.snapshot": handle_quote_snapshot,
     "quote.history": handle_quote_history,
     "quote.subscribe": handle_quote_subscribe,
+    "trade.connect": handle_trade_connect,
+    "trade.order": handle_trade_order,
+    "trade.cancel": handle_trade_cancel,
+    "trade.positions": handle_trade_positions,
+    "trade.orders": handle_trade_orders,
+    "trade.account": handle_trade_account,
 }
 
 

@@ -2,10 +2,7 @@
  * mookquant · QMT 交易数据源
  *
  * 通过 bridge/qmt_server.py 的交易方法进行实盘交易。
- * 需要 miniQMT 客户端运行。
- *
- * 注意：当前 qmt_server.py 尚未实现交易方法，
- * 此类为骨架，连接后会报错并回落到 mock。
+ * 需要 miniQMT 客户端运行，且 .env 中配置 QMT_PATH / QMT_ACCOUNT_ID。
  */
 
 const { spawn } = require("child_process");
@@ -72,6 +69,7 @@ class QmtTradeDataSource {
       });
 
       this._request("ping", { port: this._options.port || 58610 })
+        .then(() => this._request("trade.connect", {}))
         .then(() => { this._ready = true; resolve(); })
         .catch((e) => reject(new Error("QMT 交易握手失败: " + e.message)));
     });
@@ -105,8 +103,7 @@ class QmtTradeDataSource {
   }
 
   async placeOrder(order) {
-    const port = this._options.port || 58610;
-    return await this._request("trade.order", { ...order, port });
+    return await this._request("trade.order", order);
   }
 
   async cancelOrder(orderId) {
