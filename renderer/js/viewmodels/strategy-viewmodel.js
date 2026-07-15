@@ -1,14 +1,14 @@
-﻿/**
+/**
  * mookquant · Strategy ViewModel
  *
- * 策略管理：列表、创建、编辑、删除。
- * state 是单一事实源。
+ * 策略管理：列表、创建、编辑、删除 + 启动/停止执行 + 运行状态。
  */
 class StrategyViewModel {
   constructor(facade) {
     this.facade = facade;
     this.state = {
       list: [],
+      executorStatus: {},
       loading: false,
       editing: null,
       error: null,
@@ -37,8 +37,41 @@ class StrategyViewModel {
       const resp = await this.facade.strategy.list();
       if (!resp.ok) { this._set({ loading: false, error: resp.error }); return; }
       this._set({ list: resp.data || [], loading: false });
+      await this.loadExecutorStatus();
     } catch (e) {
       this._set({ loading: false, error: e.message });
+    }
+  }
+
+  async loadExecutorStatus() {
+    try {
+      if (!this.facade.executor) return;
+      const resp = await this.facade.executor.list();
+      if (resp.ok && resp.data) {
+        const map = {};
+        for (const s of resp.data) map[s.strategyId] = s;
+        this._set({ executorStatus: map });
+      }
+    } catch {}
+  }
+
+  async startExecution(id) {
+    try {
+      const resp = await this.facade.executor.start(id);
+      if (!resp.ok) { this._set({ error: resp.error }); return; }
+      await this.loadExecutorStatus();
+    } catch (e) {
+      this._set({ error: e.message });
+    }
+  }
+
+  async stopExecution(id) {
+    try {
+      const resp = await this.facade.executor.stop(id);
+      if (!resp.ok) { this._set({ error: resp.error }); return; }
+      await this.loadExecutorStatus();
+    } catch (e) {
+      this._set({ error: e.message });
     }
   }
 
@@ -50,7 +83,8 @@ class StrategyViewModel {
         description: "",
         type: "ma_cross",
         symbols: "",
-        params: JSON.stringify({ fast: 5, slow: 20, stopLoss: 0.05 }, null, 2),
+        params: JSON.stringify({ fast: 5, slow: 20 }, null, 2),
+        risk: JSON.stringify({ stopLoss: 0.05, stopProfit: 0.15, maxOrderAmount: 500000, maxDailyTrades: 10, maxPositionRatio: 0.3 }, null, 2),
         status: "draft",
       },
       error: null,
@@ -66,6 +100,7 @@ class StrategyViewModel {
         type: strategy.type,
         symbols: (strategy.symbols || []).join(", "),
         params: JSON.stringify(strategy.params || {}, null, 2),
+        risk: JSON.stringify(strategy.risk || {}, null, 2),
         status: strategy.status,
       },
       error: null,
@@ -78,11 +113,17 @@ class StrategyViewModel {
 
   async save(form) {
     const symbols = form.symbols.split(",").map((s) => s.trim()).filter(Boolean);
-    let params;
+    let params, risk;
     try {
       params = JSON.parse(form.params || "{}");
     } catch (e) {
       this._set({ error: "策略参数 JSON 解析失败: " + e.message });
+      return;
+    }
+    try {
+      risk = JSON.parse(form.risk || "{}");
+    } catch (e) {
+      this._set({ error: "风控参数 JSON 解析失败: " + e.message });
       return;
     }
     const payload = {
@@ -91,6 +132,7 @@ class StrategyViewModel {
       type: form.type,
       symbols,
       params,
+      risk,
       status: form.status,
     };
     if (!payload.name) { this._set({ error: "策略名称不能为空" }); return; }

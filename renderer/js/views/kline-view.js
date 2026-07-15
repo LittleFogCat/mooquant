@@ -57,6 +57,7 @@
 
       chart.setOption({
         backgroundColor: "transparent",
+        title: { show: false },
         animation: false,
         tooltip: {
           trigger: "axis",

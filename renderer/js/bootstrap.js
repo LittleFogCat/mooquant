@@ -30,6 +30,16 @@
   window.StrategyView.render(document.getElementById("strategyContainer"), strategyVM);
   window.AppRouter.onEnter("strategy", () => strategyVM.loadList());
 
+  // 策略执行状态轮询
+  var _executorPoll = null;
+  window.AppRouter.onEnter("strategy", () => {
+    if (_executorPoll) clearInterval(_executorPoll);
+    _executorPoll = setInterval(() => strategyVM.loadExecutorStatus(), 5000);
+  });
+  window.AppRouter.onLeave("strategy", () => {
+    if (_executorPoll) { clearInterval(_executorPoll); _executorPoll = null; }
+  });
+
   // ---- 回测页 ----
   const backtestVM = new window.BacktestViewModel(facade);
   window.BacktestView.render(document.getElementById("backtestContainer"), backtestVM);

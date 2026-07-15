@@ -306,19 +306,29 @@ def handle_quote_history(params):
         log("download_history_data warning: {}".format(e))
     try:
         data = xt.get_market_data_ex([], [code], period=period, count=count) or {}
-        series = data.get(code, [])
+        df = data.get(code)
         bars = []
-        for d in series:
-            bars.append({
-                "time": int(d.get("time", 0) or 0),
-                "open": float(d.get("open", 0) or 0),
-                "high": float(d.get("high", 0) or 0),
-                "low":  float(d.get("low",  0) or 0),
-                "close": float(d.get("close", 0) or 0),
-                "volume": float(d.get("volume", 0) or 0) * 100,
-                "amount": float(d.get("amount", 0) or 0),
-            })
+        if df is not None and len(df) > 0:
+            for idx, row in df.iterrows():
+                date_str = str(idx)
+                if len(date_str) == 8:
+                    date_fmt = date_str[:4] + "-" + date_str[4:6] + "-" + date_str[6:8]
+                else:
+                    date_fmt = date_str
+                bars.append({
+                    "time": int(row.get("time", 0) or 0),
+                    "date": date_fmt,
+                    "open": float(row.get("open", 0) or 0),
+                    "high": float(row.get("high", 0) or 0),
+                    "low":  float(row.get("low",  0) or 0),
+                    "close": float(row.get("close", 0) or 0),
+                    "volume": float(row.get("volume", 0) or 0) * 100,
+                    "amount": float(row.get("amount", 0) or 0),
+                })
         log("history: got {} bars from xtquant".format(len(bars)))
+        if not bars:
+            bars = _generate_mock_bars(code, count)
+            log("history: no data, using mock")
         return {"bars": bars, "count": len(bars)}
     except Exception as e:
         log("get_market_data_ex failed ({}), using mock data".format(e))

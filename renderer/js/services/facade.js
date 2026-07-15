@@ -137,10 +137,23 @@
     }
     return { ok: true, data: { bars: bars.reverse(), count: bars.length } };
   }
+  var executorMock = {
+    start: async (id) => ({ ok: true, data: { strategyId: id, status: "running" } }),
+    stop: async (id) => ({ ok: true, data: { strategyId: id, status: "stopped" } }),
+    status: async (id) => ({ ok: true, data: { strategyId: id, status: "stopped" } }),
+    list: async () => ({ ok: true, data: [] }),
+  };
+  var logsMock = {
+    trades: async () => [],
+    strategy: async () => [],
+    equity: async () => [],
+  };
   window.AppFacade = {
     quote: { query: mockQuery, info: async () => ({ mode: "mock", description: "前端 mock" }), history: async (s, p, c) => mockHistory(s, p, c),
       search: async (q) => ({ ok: true, data: searchStocks(q) }), status: async () => ({ mode: "mock", description: "mock", connected: false }) },
     strategy: strategyMock, backtest: backtestMock, trade: tradeMock, settings: settingsMock,
     app: { info: async () => ({ name: "mookquant", version: "0.2.0", platform: "browser" }) },
+    executor: executorMock,
+    logs: logsMock,
   };
 })();
