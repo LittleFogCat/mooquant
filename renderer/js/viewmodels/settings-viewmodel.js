@@ -27,8 +27,11 @@ class SettingsViewModel {
     try {
       const resp = await this.facade.settings.set({ dataSource: this.state.dataSource, tradeSource: this.state.tradeSource });
       this._set({ loading: false, saved: true });
-      setTimeout(() => this._set({ saved: false }), 2000);
     } catch (e) { this._set({ loading: false, error: e.message }); }
+  }
+
+  dismissSaved() {
+    this._set({ saved: false });
   }
 }
 window.SettingsViewModel = SettingsViewModel;

@@ -11,6 +11,7 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
   ipcMain.handle("quote:status", async () => quoteService.getStatus());
   // ---- App ----
   ipcMain.handle("app:info", async () => { const { app } = require("electron"); return { name: app.getName(), version: app.getVersion(), platform: process.platform }; });
+  ipcMain.handle("app:restart", async () => { const { app } = require("electron"); app.relaunch(); app.exit(0); });
   // ---- 策略 ----
   if (strategyService) {
     ipcMain.handle("strategy:list", async () => { try { return { ok: true, data: await strategyService.list() }; } catch (e) { return { ok: false, error: e.message }; } });

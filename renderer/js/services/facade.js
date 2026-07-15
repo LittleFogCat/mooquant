@@ -152,7 +152,7 @@
     quote: { query: mockQuery, info: async () => ({ mode: "mock", description: "前端 mock" }), history: async (s, p, c) => mockHistory(s, p, c),
       search: async (q) => ({ ok: true, data: searchStocks(q) }), status: async () => ({ mode: "mock", description: "mock", connected: false }) },
     strategy: strategyMock, backtest: backtestMock, trade: tradeMock, settings: settingsMock,
-    app: { info: async () => ({ name: "mookquant", version: "0.2.0", platform: "browser" }) },
+    app: { info: async () => ({ name: "mookquant", version: "0.2.0", platform: "browser" }), restart: async () => { location.reload(); } },
     executor: executorMock,
     logs: logsMock,
   };

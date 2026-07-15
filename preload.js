@@ -46,6 +46,6 @@ const facade = {
     get: () => ipcRenderer.invoke("settings:get"),
     set: (patch) => ipcRenderer.invoke("settings:set", patch),
   },
-  app: { info: () => ipcRenderer.invoke("app:info") },
+  app: { info: () => ipcRenderer.invoke("app:info"), restart: () => ipcRenderer.invoke("app:restart") },
 };
 contextBridge.exposeInMainWorld("mookquant", { facade, isElectron: true });

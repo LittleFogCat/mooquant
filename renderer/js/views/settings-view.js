@@ -9,7 +9,18 @@
         <div class="card">
           <div class="card-title">数据源设置</div>
           ${state.error ? `<div class="status error" style="margin-bottom:16px">${escapeHtml(state.error)}</div>` : ""}
-          ${state.saved ? `<div class="status info" style="margin-bottom:16px">✓ 设置已保存，重启应生效</div>` : ""}
+          ${state.saved ? `
+        <div class="modal-overlay" id="restartModal" style="z-index:1001">
+          <div class="modal" style="max-width:400px">
+            <h2 class="modal-title">重启生效</h2>
+            <p style="color:var(--text-2);font-size:14px;line-height:1.6;margin-bottom:20px">设置已保存，切换数据源需要重启应用才能生效。是否立即重启？</p>
+            <div class="modal-actions">
+              <button class="btn btn-secondary" id="restartLater">稍后</button>
+              <button class="btn btn-primary" id="restartNow">立即重启</button>
+            </div>
+          </div>
+        </div>
+      ` : ""}
           <div class="form-group">
             <label class="form-label">行情数据源</label>
             <div class="radio-group">
@@ -47,6 +58,10 @@
       }); });
       const saveBtn = root.querySelector("#settingsSave");
       if (saveBtn) saveBtn.addEventListener("click", () => vm.save());
+      const restartNow = root.querySelector("#restartNow");
+      if (restartNow) restartNow.addEventListener("click", () => { if (vm.facade.app && vm.facade.app.restart) vm.facade.app.restart(); });
+      const restartLater = root.querySelector("#restartLater");
+      if (restartLater) restartLater.addEventListener("click", () => vm.dismissSaved());
     }
     vm.subscribe(paint);
   }
