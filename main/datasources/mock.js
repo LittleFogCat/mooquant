@@ -36,9 +36,12 @@ function detectMarket(symbol) {
 function searchByName(query) {
   const q = (query || "").trim().toLowerCase();
   if (!q) return [];
-  return STOCK_LIST.filter(s =>
-    s.name.includes(q) || s.code.includes(q) || s.code.replace(/^(sh|sz|bj)/, "").includes(q)
-  ).slice(0, 10).map(s => ({ code: s.code, name: s.name, industry: s.industry }));
+  const { getInitials } = require("../utils/pinyin");
+  return STOCK_LIST.filter(s => {
+    if (s.name.includes(q) || s.code.includes(q) || s.code.replace(/^(sh|sz|bj)/, "").includes(q)) return true;
+    const initials = getInitials(s.name);
+    return initials.startsWith(q) || initials.includes(q);
+  }).slice(0, 10).map(s => ({ code: s.code, name: s.name, industry: s.industry }));
 }
 
 class MockDataSource {

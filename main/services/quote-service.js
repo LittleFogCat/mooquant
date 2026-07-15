@@ -25,8 +25,12 @@ class QuoteService {
     } catch (e) { return { ok: false, error: e.message }; }
   }
   async search(query) {
-    try { if (typeof this.source.search === "function") return { ok: true, data: await this.source.search(query) }; return { ok: true, data: [] }; }
-    catch (e) { return { ok: false, error: e.message }; }
+    try {
+      if (typeof this.source.search === "function") return { ok: true, data: await this.source.search(query) };
+      // 数据源无 search 方法时，回退到本地股票列表搜索
+      const { searchByName } = require("../datasources/mock");
+      return { ok: true, data: searchByName(query) };
+    } catch (e) { return { ok: false, error: e.message }; }
   }
   getStatus() { return { mode: this.source.mode || "unknown", description: this.source.description || "", connected: this.source.mode === "qmt" }; }
   dispose() { this._cache.clear(); if (this.source && typeof this.source.dispose === "function") this.source.dispose(); }

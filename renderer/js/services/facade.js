@@ -49,9 +49,16 @@
     return { code: symbol.toUpperCase(), market: "sh", marketName: "上海", currency: "CNY" };
   }
   function searchStocks(q) {
-    const query = (q || "").trim().toLowerCase();
-    if (!query) return [];
-    return STOCK_LIST.filter(s => s.name.includes(query) || s.code.includes(query) || s.code.replace(/^(sh|sz|bj)/, "").includes(query)).slice(0, 10);
+    q = (q || "").trim().toLowerCase();
+    if (!q) return [];
+    return STOCK_LIST.filter(s => {
+      if (s.code.includes(q) || s.name.includes(q)) return true;
+      if (window.PinyinUtils) {
+        var initials = window.PinyinUtils.getInitials(s.name);
+        if (initials.startsWith(q) || initials.includes(q)) return true;
+      }
+      return false;
+    }).slice(0, 10);
   }
   async function mockQuery(rawSymbol) {
     let symbol = normalize(rawSymbol);
