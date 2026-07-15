@@ -29,12 +29,14 @@ const { StrategyService } = require("./main/services/strategy-service");
 const { BacktestService } = require("./main/services/backtest-service");
 const { TradeService } = require("./main/services/trade-service");
 const { ConfigManager } = require("./main/services/config-manager");
+const { ExecutorService } = require("./main/services/executor-service");
 const { createDataSource } = require("./main/datasources");
 const { createTradeDataSource } = require("./main/datasources/trade");
 
 let mainWindow = null;
 let quoteService = null, strategyService = null, backtestService = null, tradeService = null;
 let configManager = null;
+let executorService = null;
 
 function installCspHeader() {
   const csp = [
@@ -96,7 +98,10 @@ app.whenReady().then(async () => {
   const tradeSource = await createTradeDataSource({ mode: configManager.tradeSource, qmt: configManager.qmt });
   tradeService = new TradeService({ source: tradeSource });
 
-  registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager });
+  executorService = new ExecutorService({ strategyService, quoteService, tradeService });
+  executorService.restoreRunning();
+
+  registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService });
   buildMenu();
   createWindow(config);
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(config); });
@@ -106,5 +111,6 @@ app.on("window-all-closed", () => {
   if (quoteService) quoteService.dispose();
   if (backtestService) backtestService.dispose();
   if (tradeService) tradeService.dispose();
+  if (executorService) executorService.dispose();
   if (process.platform !== "darwin") app.quit();
 });

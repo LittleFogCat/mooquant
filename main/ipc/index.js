@@ -1,7 +1,7 @@
 /**
  * mookquant · IPC 路由
  */
-function registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager }) {
+function registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService }) {
   const { ipcMain } = require("electron");
   // ---- 行情 ----
   ipcMain.handle("quote:query", async (_e, s) => quoteService.query(s));
@@ -29,6 +29,13 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
     ipcMain.handle("trade:positions", async () => tradeService.getPositions());
     ipcMain.handle("trade:orders", async () => tradeService.getOrders());
     ipcMain.handle("trade:account", async () => tradeService.getAccount());
+  }
+  // ---- 策略执行 ----
+  if (executorService) {
+    ipcMain.handle("executor:start", async (_e, id) => executorService.start(id));
+    ipcMain.handle("executor:stop", async (_e, id) => executorService.stop(id));
+    ipcMain.handle("executor:status", async (_e, id) => executorService.getStatus(id));
+    ipcMain.handle("executor:list", async () => executorService.listRunning());
   }
   // ---- 设置 ----
   if (configManager) {

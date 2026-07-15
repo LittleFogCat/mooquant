@@ -18,6 +18,12 @@ const facade = {
     delete: (id) => ipcRenderer.invoke("strategy:delete", id),
   },
   backtest: { run: (c) => ipcRenderer.invoke("backtest:run", c) },
+  executor: {
+    start: (id) => ipcRenderer.invoke("executor:start", id),
+    stop: (id) => ipcRenderer.invoke("executor:stop", id),
+    status: (id) => ipcRenderer.invoke("executor:status", id),
+    list: () => ipcRenderer.invoke("executor:list"),
+  },
   trade: {
     info: () => ipcRenderer.invoke("trade:info"),
     placeOrder: (o) => ipcRenderer.invoke("trade:placeOrder", o),
