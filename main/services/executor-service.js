@@ -3,13 +3,14 @@
  *
  * 职责：
  *  1. 管理运行中的策略实例（启动/停止/状态查询）
- *  2. 定时调度：拉行情 -> 算信号 -> 自动下单
- *  3. 应用重启后可恢复运行状态
+ *  2. 定时调度：风控检查 -> 拉行情 -> 算信号 -> 自动下单
+ *  3. 运行时风控：止损止盈、异常熔断
+ *  4. 执行日志持久化 + 每日净值记录
  */
 
 const { generateSignal } = require("../strategies/ma_cross");
+const { LogService } = require("./log-service");
 
-// 策略类型 -> 信号函数映射
 const SIGNAL_FUNCTIONS = {
   ma_cross: generateSignal,
 };
@@ -18,34 +19,31 @@ function log(msg) {
   console.log("[executor] " + msg);
 }
 
-/**
- * 单个策略执行器
- */
 class StrategyExecutor {
   constructor({ strategy, quoteService, tradeService, strategyService }) {
     this.strategy = strategy;
     this.quoteService = quoteService;
     this.tradeService = tradeService;
     this.strategyService = strategyService;
+    this._log = new LogService();
     this._timer = null;
     this.status = "stopped";
     this._lastTick = null;
     this._lastSignal = null;
     this._tickCount = 0;
     this._error = null;
+    this._consecutiveErrors = 0;
   }
 
   start() {
     if (this.status === "running") return;
     this.status = "running";
     this._error = null;
+    this._consecutiveErrors = 0;
     this._updateStatus("running");
     log("启动策略: " + this.strategy.name + " (" + this.strategy.id + ")");
 
-    // 立即执行一次
     this.tick();
-
-    // 定时执行（默认 60 秒）
     const intervalMs = (this.strategy.schedule && this.strategy.schedule.intervalMs) || 60000;
     this._timer = setInterval(() => this.tick(), intervalMs);
   }
@@ -71,11 +69,20 @@ class StrategyExecutor {
         return;
       }
 
-      // 1. 获取 K 线数据（多取几根确保均线计算够用）
+      // 0. 运行时风控：止损止盈
+      const riskAction = await this._checkStopLossProfit(symbol);
+      if (riskAction) {
+        this._logTick({ symbol, signal: { action: riskAction, reason: "风控触发" } });
+        this._consecutiveErrors = 0;
+        return;
+      }
+
+      // 1. 获取 K 线数据
       const histResult = await this.quoteService.getHistory(symbol, "1d", 60);
       if (!histResult.ok) {
         this._error = "获取行情失败: " + histResult.error;
-        log(this._error);
+        this._consecutiveErrors++;
+        this._checkCircuitBreaker();
         return;
       }
 
@@ -94,26 +101,88 @@ class StrategyExecutor {
 
       const signal = signalFn(bars, this.strategy.params);
       this._lastSignal = signal;
-      log(
-        "tick #" + this._tickCount + " " + symbol +
-        " -> " + signal.action + " (" + signal.reason + ")"
-      );
+      log("tick #" + this._tickCount + " " + symbol + " -> " + signal.action + " (" + signal.reason + ")");
 
-      // 3. 执行交易
+      // 3. 获取风控参数，注入 order
+      const risk = this.strategy.risk || {};
+      const orderRisk = {
+        maxOrderAmount: risk.maxOrderAmount,
+        maxDailyTrades: risk.maxDailyTrades,
+        maxPositionRatio: risk.maxPositionRatio,
+      };
+
+      // 4. 执行交易
       if (signal.action === "buy") {
-        await this._executeBuy(symbol, bars[bars.length - 1].close);
+        await this._executeBuy(symbol, bars[bars.length - 1].close, orderRisk);
       } else if (signal.action === "sell") {
-        await this._executeSell(symbol);
+        await this._executeSell(symbol, orderRisk);
       }
 
+      // 5. 记录执行日志
+      this._logTick({ symbol, signal, price: bars[bars.length - 1].close });
       this._error = null;
+      this._consecutiveErrors = 0;
     } catch (e) {
       this._error = e.message;
+      this._consecutiveErrors++;
       log("tick 异常: " + e.message);
+      this._logTick({ error: e.message });
+      this._checkCircuitBreaker();
     }
   }
 
-  async _executeBuy(symbol, price) {
+  /**
+   * 止损止盈检查
+   * 返回 'sell' 表示触发了风控卖出，null 表示正常
+   */
+  async _checkStopLossProfit(symbol) {
+    const risk = this.strategy.risk || {};
+    if (!risk.stopLoss && !risk.stopProfit) return null;
+
+    try {
+      const positions = await this.tradeService.getPositions();
+      if (!positions.ok) return null;
+
+      const pos = positions.data.find((p) => p.symbol === symbol);
+      if (!pos || pos.quantity <= 0) return null;
+
+      const pnlPct = pos.pnlPct || 0;
+
+      // 止损
+      if (risk.stopLoss && pnlPct < 0 && Math.abs(pnlPct) >= risk.stopLoss * 100) {
+        log("止损触发: " + symbol + " pnlPct=" + pnlPct.toFixed(2) + "%");
+        await this._executeSell(symbol, {});
+        return "stopLoss";
+      }
+
+      // 止盈
+      if (risk.stopProfit && pnlPct > 0 && pnlPct >= risk.stopProfit * 100) {
+        log("止盈触发: " + symbol + " pnlPct=" + pnlPct.toFixed(2) + "%");
+        await this._executeSell(symbol, {});
+        return "stopProfit";
+      }
+    } catch (e) {
+      log("止损止盈检查异常: " + e.message);
+    }
+
+    return null;
+  }
+
+  /**
+   * 异常熔断：连续错误超过阈值则停止策略
+   */
+  _checkCircuitBreaker() {
+    const risk = this.strategy.risk || {};
+    const maxErrors = risk.maxConsecutiveErrors || 5;
+    if (this._consecutiveErrors >= maxErrors) {
+      log("异常熔断: 连续 " + this._consecutiveErrors + " 次错误，停止策略");
+      this.status = "error";
+      this._error = "异常熔断: 连续 " + this._consecutiveErrors + " 次错误";
+      this.stop();
+    }
+  }
+
+  async _executeBuy(symbol, price, orderRisk) {
     const account = await this.tradeService.getAccount();
     if (!account.ok) {
       log("买入失败: 无法获取账户信息 - " + account.error);
@@ -121,15 +190,14 @@ class StrategyExecutor {
     }
 
     const available = account.data.available;
-    const maxAmount = available * 0.9; // 留 10% 缓冲
-    const qty = Math.floor(maxAmount / price / 100) * 100; // 整百手
+    const maxAmount = available * 0.9;
+    const qty = Math.floor(maxAmount / price / 100) * 100;
 
     if (qty <= 0) {
       log("买入跳过: 可用资金不足 (available=" + available + " price=" + price + ")");
       return;
     }
 
-    // 检查是否已有持仓，避免重复买入
     const positions = await this.tradeService.getPositions();
     if (positions.ok) {
       const existing = positions.data.find((p) => p.symbol === symbol);
@@ -144,6 +212,8 @@ class StrategyExecutor {
       side: "buy",
       quantity: qty,
       orderType: "market",
+      risk: orderRisk,
+      strategyId: this.strategy.id,
     });
 
     if (result.ok) {
@@ -153,7 +223,7 @@ class StrategyExecutor {
     }
   }
 
-  async _executeSell(symbol) {
+  async _executeSell(symbol, orderRisk) {
     const positions = await this.tradeService.getPositions();
     if (!positions.ok) {
       log("卖出失败: 无法获取持仓 - " + positions.error);
@@ -171,6 +241,8 @@ class StrategyExecutor {
       side: "sell",
       quantity: pos.quantity,
       orderType: "market",
+      risk: orderRisk,
+      strategyId: this.strategy.id,
     });
 
     if (result.ok) {
@@ -178,6 +250,16 @@ class StrategyExecutor {
     } else {
       log("卖出失败: " + result.error);
     }
+  }
+
+  _logTick(record) {
+    try {
+      this._log.logStrategyTick(this.strategy.id, {
+        ...record,
+        tickCount: this._tickCount,
+        status: this.status,
+      });
+    } catch {}
   }
 
   async _updateStatus(status) {
@@ -207,15 +289,12 @@ class StrategyExecutor {
   }
 }
 
-/**
- * 执行器管理器
- */
 class ExecutorService {
   constructor({ strategyService, quoteService, tradeService }) {
     this.strategyService = strategyService;
     this.quoteService = quoteService;
     this.tradeService = tradeService;
-    this._executors = new Map(); // strategyId -> StrategyExecutor
+    this._executors = new Map();
   }
 
   async start(strategyId) {
@@ -269,9 +348,6 @@ class ExecutorService {
     };
   }
 
-  /**
-   * 应用启动时恢复运行中的策略
-   */
   async restoreRunning() {
     try {
       const strategies = await this.strategyService.list();

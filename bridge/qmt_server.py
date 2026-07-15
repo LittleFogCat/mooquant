@@ -336,8 +336,29 @@ def handle_quote_subscribe(params):
     ensure_connected(port)
     xt = _XTDATA
 
-    def _cb(_data):
-        pass
+    def _cb(data):
+        try:
+            if data and isinstance(data, dict):
+                for _code, ticks in data.items():
+                    if ticks and len(ticks) > 0:
+                        tick = ticks[-1] if isinstance(ticks, list) else ticks
+                        push = {
+                            "id": None,
+                            "push": "tick",
+                            "data": {
+                                "code": _code,
+                                "price": float(tick.get("close", 0) or tick.get("lastPrice", 0) or 0),
+                                "open": float(tick.get("open", 0) or 0),
+                                "high": float(tick.get("high", 0) or 0),
+                                "low": float(tick.get("low", 0) or 0),
+                                "volume": float(tick.get("volume", 0) or 0),
+                                "amount": float(tick.get("amount", 0) or 0),
+                                "timestamp": str(tick.get("time", "")),
+                            },
+                        }
+                        reply(push)
+        except Exception as e:
+            log("subscribe callback error: {}".format(e))
 
     xt.subscribe_quote(code, period=period, count=-1, callback=_cb)
     log("subscribed: {} period={}".format(code, period))

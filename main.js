@@ -92,6 +92,15 @@ app.whenReady().then(async () => {
   const config = configManager.get();
 
   const dataSource = await createDataSource({ mode: configManager.dataSource, qmt: configManager.qmt });
+
+  // 行情推送：转发到渲染进程
+  if (dataSource && typeof dataSource.onPush === "function") {
+    dataSource.onPush("tick", (data) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("quote:tick", data);
+      }
+    });
+  }
   quoteService = new QuoteService({ source: dataSource, cacheTtlMs: config.cache?.ttlMs ?? 5000 });
   strategyService = new StrategyService();
   backtestService = new BacktestService({ strategyService, config: configManager.qmt });

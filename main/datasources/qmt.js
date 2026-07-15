@@ -28,6 +28,7 @@ class QmtDataSource {
     this._ready = false;
     this._initPromise = null;
     this._exitHandlers = [];
+    this._pushHandlers = {};  // push type -> [handler]
     this._lastError = null;
   }
 
@@ -119,12 +120,33 @@ class QmtDataSource {
       process.stderr.write("[qmt] 无法解析 JSON: " + line + "\n");
       return;
     }
+    // 识别推送消息（无 id，有 push 字段）
+    if (msg.push && !msg.id) {
+      this._onPush(msg.push, msg.data);
+      return;
+    }
+    // 普通 RPC 响应
     if (msg.id && this._pending.has(msg.id)) {
       const p = this._pending.get(msg.id);
       this._pending.delete(msg.id);
       if (msg.error) p.reject(new Error(msg.error));
       else p.resolve(msg.result);
     }
+  }
+
+  _onPush(type, data) {
+    const handlers = this._pushHandlers[type] || [];
+    for (const h of handlers) {
+      try { h(data); } catch (e) {
+        process.stderr.write("[qmt] push handler error: " + e.message + "\n");
+      }
+    }
+  }
+
+  /** 注册推送事件处理器 */
+  onPush(type, handler) {
+    if (!this._pushHandlers[type]) this._pushHandlers[type] = [];
+    this._pushHandlers[type].push(handler);
   }
 
   _send(obj) {
@@ -191,6 +213,7 @@ class QmtDataSource {
 
   dispose() {
     this._exitHandlers = [];
+    this._pushHandlers = {};  // push type -> [handler]
     if (this._proc) {
       try { this._proc.kill(); } catch {}
       this._proc = null;

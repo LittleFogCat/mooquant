@@ -37,6 +37,14 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
     ipcMain.handle("executor:status", async (_e, id) => executorService.getStatus(id));
     ipcMain.handle("executor:list", async () => executorService.listRunning());
   }
+  // ---- 日志查询 ----
+  {
+    const { LogService } = require("../services/log-service");
+    const logService = new LogService();
+    ipcMain.handle("logs:trades", async (_e, date) => logService.readTrades(date));
+    ipcMain.handle("logs:strategy", async (_e, id, date) => logService.readStrategyLogs(id, date));
+    ipcMain.handle("logs:equity", async (_e, id) => logService.readEquity(id));
+  }
   // ---- 设置 ----
   if (configManager) {
     ipcMain.handle("settings:get", async () => configManager.get());

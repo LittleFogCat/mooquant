@@ -9,6 +9,11 @@ const facade = {
     history: (s, p, c) => ipcRenderer.invoke("quote:history", s, p, c),
     search: (q) => ipcRenderer.invoke("quote:search", q),
     status: () => ipcRenderer.invoke("quote:status"),
+    onTick: (callback) => {
+      const handler = (_e, data) => callback(data);
+      ipcRenderer.on("quote:tick", handler);
+      return () => ipcRenderer.removeListener("quote:tick", handler);
+    },
   },
   strategy: {
     list: () => ipcRenderer.invoke("strategy:list"),
@@ -31,6 +36,11 @@ const facade = {
     getPositions: () => ipcRenderer.invoke("trade:positions"),
     getOrders: () => ipcRenderer.invoke("trade:orders"),
     getAccount: () => ipcRenderer.invoke("trade:account"),
+  },
+  logs: {
+    trades: (date) => ipcRenderer.invoke("logs:trades", date),
+    strategy: (id, date) => ipcRenderer.invoke("logs:strategy", id, date),
+    equity: (id) => ipcRenderer.invoke("logs:equity", id),
   },
   settings: {
     get: () => ipcRenderer.invoke("settings:get"),
