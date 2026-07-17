@@ -54,6 +54,28 @@ function installCspHeader() {
   });
 }
 
+function createSplashWindow() {
+  const splash = new BrowserWindow({
+    width: 360, height: 200,
+    frame: false, resizable: false, movable: true,
+    transparent: false,
+    backgroundColor: "#0a0a0f",
+    show: true,
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+  });
+  splash.loadFile(path.join(__dirname, "renderer", "splash.html"));
+  return splash;
+}
+
+function updateSplash(splash, step, progress) {
+  try {
+    splash.webContents.executeJavaScript(
+      "document.getElementById('step').textContent=" + JSON.stringify(step) + ";" +
+      "document.getElementById('fill').style.width=" + JSON.stringify(progress + "%") + ";"
+    );
+  } catch {}
+}
+
 function createWindow(config) {
   const win = config.window || {};
   mainWindow = new BrowserWindow({
@@ -92,17 +114,16 @@ app.whenReady().then(async () => {
   const config = configManager.get();
   strategyService = new StrategyService();
 
-  // 先创建窗口 + 菜单，让用户立即看到界面
-  buildMenu();
-  createWindow(config);
+  // 显示 splash 启动窗口
+  const splash = createSplashWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(config); });
 
-  // 后台初始化数据源（QMT 连接较慢，不阻塞窗口显示）
+  // 后台初始化
+  updateSplash(splash, "初始化行情数据源...", 20);
   console.log("[main] 初始化数据源...");
 
   const dataSource = await createDataSource({ mode: configManager.dataSource, qmt: configManager.qmt });
 
-  // 行情推送：转发到渲染进程
   if (dataSource && typeof dataSource.onPush === "function") {
     dataSource.onPush("tick", (data) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -111,15 +132,27 @@ app.whenReady().then(async () => {
     });
   }
   quoteService = new QuoteService({ source: dataSource, cacheTtlMs: config.cache?.ttlMs ?? 5000 });
+
+  updateSplash(splash, "初始化交易数据源...", 50);
   backtestService = new BacktestService({ strategyService, config: configManager.qmt });
   const tradeSource = await createTradeDataSource({ mode: configManager.tradeSource, qmt: configManager.qmt });
   tradeService = new TradeService({ source: tradeSource });
 
+  updateSplash(splash, "恢复策略执行...", 75);
   executorService = new ExecutorService({ strategyService, quoteService, tradeService });
   executorService.restoreRunning();
 
   registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService });
+
+  updateSplash(splash, "启动完成", 100);
   console.log("[main] 数据源初始化完成，IPC 已注册");
+
+  // 关闭 splash，显示主窗口
+  buildMenu();
+  createWindow(config);
+  mainWindow.once("ready-to-show", () => {
+    setTimeout(() => { splash.close(); }, 300);
+  });
 });
 
 app.on("window-all-closed", () => {
