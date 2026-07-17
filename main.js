@@ -90,6 +90,15 @@ app.whenReady().then(async () => {
   installCspHeader();
   configManager = new ConfigManager();
   const config = configManager.get();
+  strategyService = new StrategyService();
+
+  // 先创建窗口 + 菜单，让用户立即看到界面
+  buildMenu();
+  createWindow(config);
+  app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(config); });
+
+  // 后台初始化数据源（QMT 连接较慢，不阻塞窗口显示）
+  console.log("[main] 初始化数据源...");
 
   const dataSource = await createDataSource({ mode: configManager.dataSource, qmt: configManager.qmt });
 
@@ -102,7 +111,6 @@ app.whenReady().then(async () => {
     });
   }
   quoteService = new QuoteService({ source: dataSource, cacheTtlMs: config.cache?.ttlMs ?? 5000 });
-  strategyService = new StrategyService();
   backtestService = new BacktestService({ strategyService, config: configManager.qmt });
   const tradeSource = await createTradeDataSource({ mode: configManager.tradeSource, qmt: configManager.qmt });
   tradeService = new TradeService({ source: tradeSource });
@@ -111,9 +119,7 @@ app.whenReady().then(async () => {
   executorService.restoreRunning();
 
   registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService });
-  buildMenu();
-  createWindow(config);
-  app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(config); });
+  console.log("[main] 数据源初始化完成，IPC 已注册");
 });
 
 app.on("window-all-closed", () => {
