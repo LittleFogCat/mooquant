@@ -19,11 +19,6 @@ try {
   // .env 不存在时静默忽略
 }
 
-// Windows 控制台设为 UTF-8，避免中文乱码
-if (process.platform === "win32") {
-  try { require("child_process").execSync("chcp 65001", { stdio: "ignore" }); } catch {}
-}
-
 const path = require("path");
 const fs2 = require("fs");
 const { app, BrowserWindow, Menu, shell, session } = require("electron");

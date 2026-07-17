@@ -6,8 +6,8 @@
   "author": "mookquant",
   "license": "MIT",
   "scripts": {
-    "start": "electron .",
-    "dev": "electron . --enable-logging",
+    "start": "chcp 65001 >nul & electron .",
+    "dev": "chcp 65001 >nul & electron . --enable-logging",
     "bridge:install": "cd bridge && pip install -r requirements.txt",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
@@ -32,13 +32,22 @@
     ],
     "mac": {
       "category": "public.app-category.finance",
-      "target": ["dmg", "zip"]
+      "target": [
+        "dmg",
+        "zip"
+      ]
     },
     "win": {
-      "target": ["nsis", "portable"]
+      "target": [
+        "nsis",
+        "portable"
+      ]
     },
     "linux": {
-      "target": ["AppImage", "deb"]
+      "target": [
+        "AppImage",
+        "deb"
+      ]
     }
   }
 }
