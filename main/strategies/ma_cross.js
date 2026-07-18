@@ -1,6 +1,8 @@
 /**
- * mookquant · MA Cross 信号计算模块
+ * @deprecated 策略信号计算已统一到 Python 桥（bridge/strategies/builtin/ma_cross.py）。
+ * 本文件保留仅供历史参考，执行器不再调用。回测与实盘共用同一份 on_bar 逻辑。
  *
+ * mookquant · MA Cross 信号计算模块（旧）
  * 供策略执行器调用：输入 K 线序列 + 参数，输出买卖信号。
  * 信号逻辑与 bridge/backtest_engine.py 的 strategy_ma_cross 保持一致。
  */

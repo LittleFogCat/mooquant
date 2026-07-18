@@ -1,3 +1,9 @@
+﻿/**
+ * mookquant · Strategy View（策略管理视图）
+ *
+ * 列表 + 编辑弹窗 + 启动/停止 + 导出 QMT 脚本。
+ * 策略类型从后端 strategyTypes 动态加载（替代硬编码），参数仍用 JSON 编辑。
+ */
 const TYPE_LABELS = {
     ma_cross: "双均线",
     momentum: "动量",
@@ -9,6 +15,12 @@ const TYPE_LABELS = {
     return String(s == null ? "" : s).replace(/[&<>"'\/]/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "/": "&#x2F;",
     }[c]));
+  }
+
+  /** 从 state.strategyTypes 取展示名，fallback 到 TYPE_LABELS */
+  function getTypeLabel(state, type) {
+    const t = (state.strategyTypes || []).find((x) => x.name === type);
+    return t ? t.display_name : (TYPE_LABELS[type] || type);
   }
 
   function renderList(state, vm) {
@@ -38,12 +50,13 @@ const TYPE_LABELS = {
         : '<button class="btn btn-primary btn-sm" data-action="start" data-id="' + escapeHtml(s.id) + '">启动</button>';
       return '<tr>' +
         '<td><strong>' + escapeHtml(s.name) + '</strong>' + runInfo + '</td>' +
-        '<td>' + escapeHtml(TYPE_LABELS[s.type] || s.type) + '</td>' +
+        '<td>' + escapeHtml(getTypeLabel(state, s.type)) + '</td>' +
         '<td>' + statusBadge + '</td>' +
         '<td>' + escapeHtml(new Date(s.updatedAt).toLocaleDateString("zh-CN")) + '</td>' +
         '<td>' +
           runBtn + " " +
           '<button class="btn btn-secondary btn-sm" data-action="edit" data-id="' + escapeHtml(s.id) + '">编辑</button> ' +
+          '<button class="btn btn-secondary btn-sm" data-action="export" data-id="' + escapeHtml(s.id) + '">导出</button> ' +
           '<button class="btn btn-danger btn-sm" data-action="delete" data-id="' + escapeHtml(s.id) + '">删除</button>' +
         '</td>' +
       '</tr>';
@@ -57,6 +70,13 @@ const TYPE_LABELS = {
   function renderModal(state) {
     if (!state.editing) return "";
     const e = state.editing;
+    const typeOptions = (state.strategyTypes && state.strategyTypes.length)
+      ? state.strategyTypes.map((t) =>
+          '<option value="' + escapeHtml(t.name) + '" ' + (e.type === t.name ? "selected" : "") + '>' + escapeHtml(t.display_name) + '</option>'
+        ).join("")
+      : Object.entries(TYPE_LABELS).map(([v, l]) =>
+          '<option value="' + v + '" ' + (e.type === v ? "selected" : "") + '>' + l + '</option>'
+        ).join("");
     return '<div class="modal-overlay" id="strategyModal">' +
       '<div class="modal">' +
         '<h2 class="modal-title">' + (e.id ? "编辑策略" : "新建策略") + '</h2>' +
@@ -65,11 +85,7 @@ const TYPE_LABELS = {
           '<input class="input-field" id="st_name" value="' + escapeHtml(e.name) + '" placeholder="如：双均线策略" /></div>' +
         '<div class="form-row">' +
           '<div class="form-group"><label class="form-label">类型</label>' +
-            '<select class="input-field" id="st_type">' +
-              Object.entries(TYPE_LABELS).map(([v, l]) =>
-                '<option value="' + v + '" ' + (e.type === v ? "selected" : "") + '>' + l + '</option>'
-              ).join("") +
-            '</select></div>' +
+            '<select class="input-field" id="st_type">' + typeOptions + '</select></div>' +
           '<div class="form-group"><label class="form-label">状态</label>' +
             '<select class="input-field" id="st_status">' +
               '<option value="draft" ' + (e.status === "draft" ? "selected" : "") + '>草稿</option>' +
@@ -94,6 +110,24 @@ const TYPE_LABELS = {
     '</div>';
   }
 
+  /** 导出 QMT 脚本弹窗 */
+  function renderExportModal(state) {
+    if (!state.exportedScript) return "";
+    return '<div class="modal-overlay" id="exportModal">' +
+      '<div class="modal" style="max-width:760px">' +
+        '<h2 class="modal-title">导出 QMT 脚本 · ' + escapeHtml(state.exportedName || "") + '</h2>' +
+        '<div style="font-size:12px;color:var(--text-tertiary);margin-bottom:8px">' +
+          '复制以下脚本，粘贴到 QMT 客户端「模型研究」新建模型即可运行。策略逻辑与框架内回测/实盘完全一致。' +
+        '</div>' +
+        '<textarea class="input-field" id="export_script" style="font-family:monospace;font-size:12px;min-height:380px;white-space:pre;resize:vertical" readonly>' + escapeHtml(state.exportedScript) + '</textarea>' +
+        '<div class="modal-actions">' +
+          '<button class="btn btn-secondary" data-action="copy-export">复制到剪贴板</button>' +
+          '<button class="btn btn-primary" data-action="close-export">关闭</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
   function collectForm() {
     return {
       name: document.getElementById("st_name").value,
@@ -111,7 +145,7 @@ const TYPE_LABELS = {
         '<h2 style="margin:0">策略管理</h2>' +
         '<button class="btn btn-primary" data-action="create">+ 新建策略</button>' +
       '</div>';
-      root.innerHTML = header + renderList(state, vm) + renderModal(state);
+      root.innerHTML = header + renderList(state, vm) + renderModal(state) + renderExportModal(state);
 
       root.querySelectorAll("[data-action]").forEach((el) => {
         el.addEventListener("click", () => {
@@ -128,6 +162,12 @@ const TYPE_LABELS = {
             if (symbols && symbols.trim()) vm.startExecution(id, symbols.trim());
           }
           else if (action === "stop") vm.stopExecution(id);
+          else if (action === "export") vm.exportStrategy(id);
+          else if (action === "close-export") vm.closeExport();
+          else if (action === "copy-export") {
+            const ta = document.getElementById("export_script");
+            if (ta) { ta.select(); document.execCommand("copy"); }
+          }
           else if (action === "cancel") vm.cancelEdit();
           else if (action === "save") vm.save(collectForm());
         });

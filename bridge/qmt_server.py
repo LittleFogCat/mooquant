@@ -30,6 +30,16 @@ import os as _os_mod
 sys.path.insert(0, _os_mod.path.dirname(_os_mod.path.abspath(__file__)))
 import db as db_cache
 
+# 策略框架（回测与实盘共用同一份策略代码）
+from strategies.registry import load_all, get as get_strategy, list_strategies
+from strategies.base import Context
+
+# 启动时预加载所有策略（重启加载模式；热加载后续增强）
+try:
+    load_all()
+except Exception as _e:
+    sys.stderr.write('[qmt] strategy preload failed: %s\n' % _e)
+
 
 # ----------------------------------------------------------------------
 # 编码修复：Windows 默认 GBK stdout，改成 UTF-8
@@ -971,6 +981,89 @@ def handle_stock_list(params):
 
 
 # ----------------------------------------------------------------------
+# 策略框架 RPC（回测与实盘共用同一份策略代码）
+# ----------------------------------------------------------------------
+def handle_strategy_list(params):
+    """列出所有已注册策略的元数据（供 UI 渲染参数表单）"""
+    return {"strategies": list_strategies()}
+
+
+def handle_strategy_signal(params):
+    """实盘信号计算：给定策略类型 + K线 + 参数，返回最新一根 bar 的信号。
+
+    params:
+      type: str        策略类型名（如 ma_cross）
+      bars: list       K线序列 [{date,open,high,low,close,volume}, ...]
+      params: dict     策略参数
+      symbol: str      标的代码（可选）
+    """
+    strategy_type = params.get("type")
+    strategy_params = params.get("params") or {}
+    bars = params.get("bars") or []
+    symbol = params.get("symbol", "")
+
+    if not strategy_type:
+        return {"error": "缺少策略类型 type"}
+    if not bars:
+        return {"error": "缺少 K 线数据 bars"}
+
+    try:
+        strat_cls = get_strategy(strategy_type)
+    except KeyError:
+        return {"error": "未知策略类型: {}".format(strategy_type)}
+
+    strat = strat_cls(strategy_params)
+    ctx = Context()
+    ctx.symbol = symbol
+    ctx.is_backtest = False
+    ctx.period = "1d"
+    strat.on_init(ctx)
+    strat.on_after_init(ctx)
+
+    # 逐 bar 喂到最后一根，取最后一根的信号（实盘只关心当前 bar）
+    signal = None
+    for i, bar in enumerate(bars):
+        ctx.bars = bars[:i + 1]
+        ctx.barpos = i
+        signal = strat.on_bar(bar, ctx)
+    strat.on_stop(ctx)
+
+    if signal is None:
+        return {"action": "hold", "reason": "无信号"}
+    return signal.to_dict()
+
+
+def handle_strategy_export(params):
+    """导出策略为指定平台脚本字符串（适配壳包装，策略逻辑原样保留）。
+
+    params:
+      type: str        策略类型名
+      platform: str    目标平台（默认 qmt）
+      params: dict     可选，覆盖默认参数
+    """
+    strategy_type = params.get("type")
+    platform = params.get("platform", "qmt")
+    if not strategy_type:
+        return {"error": "缺少策略类型 type"}
+    try:
+        strat_cls = get_strategy(strategy_type)
+    except KeyError:
+        return {"error": "未知策略类型: {}".format(strategy_type)}
+
+    if platform == "qmt":
+        from strategies.exporters.qmt_exporter import QmtExporter
+        exporter = QmtExporter()
+    else:
+        return {"error": "不支持的导出平台: {}".format(platform)}
+
+    try:
+        script = exporter.export(strat_cls, params.get("params"))
+        return {"script": script, "platform": platform, "name": strategy_type}
+    except Exception as e:
+        return {"error": "导出失败: {}".format(e)}
+
+
+# ----------------------------------------------------------------------
 METHOD_MAP = {
     "stock.sync": handle_stock_sync,
     "stock.list": handle_stock_list,
@@ -984,6 +1077,9 @@ METHOD_MAP = {
     "trade.positions": handle_trade_positions,
     "trade.orders": handle_trade_orders,
     "trade.account": handle_trade_account,
+    "strategy.list": handle_strategy_list,
+    "strategy.signal": handle_strategy_signal,
+    "strategy.export": handle_strategy_export,
 }
 
 

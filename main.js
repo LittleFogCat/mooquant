@@ -152,7 +152,7 @@ app.whenReady().then(async () => {
   tradeService = new TradeService({ source: tradeSource });
 
   updateSplash(splash, "恢复策略执行...", 75);
-  executorService = new ExecutorService({ strategyService, quoteService, tradeService });
+  executorService = new ExecutorService({ strategyService, quoteService, tradeService, dataSource });
   executorService.restoreRunning();
 
   registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService });

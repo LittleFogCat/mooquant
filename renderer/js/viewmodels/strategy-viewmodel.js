@@ -9,6 +9,9 @@ class StrategyViewModel {
     this.state = {
       list: [],
       executorStatus: {},
+      strategyTypes: [],
+      exportedScript: null,
+      exportedName: null,
       loading: false,
       editing: null,
       error: null,
@@ -38,9 +41,34 @@ class StrategyViewModel {
       if (!resp.ok) { this._set({ loading: false, error: resp.error }); return; }
       this._set({ list: resp.data || [], loading: false });
       await this.loadExecutorStatus();
+      await this.loadStrategyTypes();
     } catch (e) {
       this._set({ loading: false, error: e.message });
     }
+  }
+
+  /** 加载可用策略类型元数据（供 UI 渲染类型选择 + 参数表单） */
+  async loadStrategyTypes() {
+    try {
+      if (!this.facade.strategy || !this.facade.strategy.types) return;
+      const resp = await this.facade.strategy.types();
+      if (resp.ok && resp.data) this._set({ strategyTypes: resp.data });
+    } catch {}
+  }
+
+  /** 导出策略为 QMT 脚本 */
+  async exportStrategy(id) {
+    const s = this.state.list.find((x) => x.id === id);
+    if (!s) return;
+    try {
+      const resp = await this.facade.strategy.export({ type: s.type, platform: "qmt" });
+      if (!resp.ok) { this._set({ error: resp.error }); return; }
+      this._set({ exportedScript: resp.data.script, exportedName: s.name, error: null });
+    } catch (e) { this._set({ error: e.message }); }
+  }
+
+  closeExport() {
+    this._set({ exportedScript: null, exportedName: null });
   }
 
   async loadExecutorStatus() {
@@ -77,13 +105,17 @@ class StrategyViewModel {
   }
 
   startCreate() {
+    const types = this.state.strategyTypes || [];
+    const first = types[0] || { name: "ma_cross", params_schema: [] };
+    const defaultParams = {};
+    for (const p of (first.params_schema || [])) defaultParams[p.key] = p.default;
     this._set({
       editing: {
         id: null,
         name: "",
         description: "",
-        type: "ma_cross",
-        params: JSON.stringify({ fast: 5, slow: 20 }, null, 2),
+        type: first.name,
+        params: JSON.stringify(defaultParams, null, 2),
         risk: JSON.stringify({ stopLoss: 0.05, stopProfit: 0.15, maxOrderAmount: 500000, maxDailyTrades: 10, maxPositionRatio: 0.3 }, null, 2),
         status: "draft",
       },

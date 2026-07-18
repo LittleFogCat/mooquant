@@ -19,6 +19,8 @@ const facade = {
   },
   strategy: {
     list: () => ipcRenderer.invoke("strategy:list"),
+    types: () => ipcRenderer.invoke("strategy:types"),
+    export: (payload) => ipcRenderer.invoke("strategy:export", payload),
     get: (id) => ipcRenderer.invoke("strategy:get", id),
     create: (p) => ipcRenderer.invoke("strategy:create", p),
     update: (id, p) => ipcRenderer.invoke("strategy:update", id, p),

@@ -17,6 +17,25 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
   // ---- 策略 ----
   if (strategyService) {
     ipcMain.handle("strategy:list", async () => { try { return { ok: true, data: await strategyService.list() }; } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("strategy:types", async () => {
+      try {
+        const src = quoteService && quoteService.source;
+        if (src && typeof src.strategyList === "function") {
+          const r = await src.strategyList();
+          return { ok: true, data: (r && r.strategies) || [] };
+        }
+        return { ok: true, data: [] };
+      } catch (e) { return { ok: true, data: [] }; }
+    });
+    ipcMain.handle("strategy:export", async (_e, payload) => {
+      try {
+        const src = quoteService && quoteService.source;
+        if (src && typeof src.strategyExport === "function") {
+          return { ok: true, data: await src.strategyExport(payload || {}) };
+        }
+        return { ok: false, error: "当前数据源不支持策略导出" };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
     ipcMain.handle("strategy:get", async (_e, id) => { try { return { ok: true, data: await strategyService.getById(id) }; } catch (e) { return { ok: false, error: e.message }; } });
     ipcMain.handle("strategy:create", async (_e, p) => { try { return { ok: true, data: await strategyService.create(p) }; } catch (e) { return { ok: false, error: e.message }; } });
     ipcMain.handle("strategy:update", async (_e, id, p) => { try { return { ok: true, data: await strategyService.update(id, p) }; } catch (e) { return { ok: false, error: e.message }; } });

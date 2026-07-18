@@ -8,24 +8,20 @@
  *  4. 执行日志持久化 + 每日净值记录
  */
 
-const { generateSignal } = require("../strategies/ma_cross");
 const { LogService } = require("./log-service");
-
-const SIGNAL_FUNCTIONS = {
-  ma_cross: generateSignal,
-};
 
 function log(msg) {
   console.log("[executor] " + msg);
 }
 
 class StrategyExecutor {
-  constructor({ strategy, symbols, quoteService, tradeService, strategyService }) {
+  constructor({ strategy, symbols, quoteService, tradeService, strategyService, dataSource }) {
     this.strategy = strategy;
     this.symbols = symbols || [];
     this.quoteService = quoteService;
     this.tradeService = tradeService;
     this.strategyService = strategyService;
+    this.dataSource = dataSource;
     this._log = new LogService();
     this._timer = null;
     this.status = "stopped";
@@ -93,14 +89,31 @@ class StrategyExecutor {
         return;
       }
 
-      // 2. 计算信号
-      const signalFn = SIGNAL_FUNCTIONS[this.strategy.type];
-      if (!signalFn) {
-        this._error = "未知策略类型: " + this.strategy.type;
+      // 2. 计算信号（通过 Python 桥 RPC，回测与实盘共用同一逻辑）
+      if (!this.dataSource || !this.dataSource.strategySignal) {
+        this._error = "数据源不支持策略信号计算";
         return;
       }
-
-      const signal = signalFn(bars, this.strategy.params);
+      let signal;
+      try {
+        signal = await this.dataSource.strategySignal({
+          type: this.strategy.type,
+          bars,
+          params: this.strategy.params || {},
+          symbol,
+        });
+      } catch (e) {
+        this._error = "信号计算失败: " + e.message;
+        this._consecutiveErrors++;
+        this._checkCircuitBreaker();
+        return;
+      }
+      if (signal && signal.error) {
+        this._error = signal.error;
+        this._consecutiveErrors++;
+        this._checkCircuitBreaker();
+        return;
+      }
       this._lastSignal = signal;
       log("tick #" + this._tickCount + " " + symbol + " -> " + signal.action + " (" + signal.reason + ")");
 

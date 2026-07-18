@@ -228,6 +228,31 @@ class QmtDataSource {
     return await this._request("stock.list", { port });
   }
 
+  /**
+   * 列出所有已注册策略的元数据（供 UI 渲染参数表单）
+   */
+  async strategyList() {
+    if (!this._ready) await this.init();
+    return await this._request("strategy.list", {});
+  }
+
+  /**
+   * 实盘信号计算：给定策略类型 + K线 + 参数，返回最新一根 bar 的信号。
+   * 回测与实盘共用同一份策略代码（bridge/strategies/）。
+   */
+  async strategySignal({ type, bars, params, symbol }) {
+    if (!this._ready) await this.init();
+    return await this._request("strategy.signal", { type, bars, params, symbol: symbol || "" });
+  }
+
+  /**
+   * 导出策略为目标平台脚本（如 QMT 单文件）
+   */
+  async strategyExport({ type, platform, params }) {
+    if (!this._ready) await this.init();
+    return await this._request("strategy.export", { type, platform: platform || "qmt", params });
+  }
+
   onExit(fn) {
     this._exitHandlers.push(fn);
   }

@@ -1,4 +1,4 @@
-﻿"""
+"""
 mookquant · 回测引擎（Python）
 
 协议：stdio JSON-RPC（每行一条 JSON）
@@ -23,6 +23,9 @@ import math
 
 # SQLite cache module (same directory)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# 策略框架（回测与实盘共用同一份策略代码）
+from strategies.registry import load_all, get as get_strategy
+from strategies.base import Context
 import db as db_cache
 
 
@@ -96,84 +99,8 @@ def generate_mock_bars(symbol, start_date, end_date):
     return bars
 
 
-# ----------------------------------------------------------------------
-# 技术指标
-# ----------------------------------------------------------------------
-def sma(closes, period):
-    """简单移动平均"""
-    result = []
-    for i in range(len(closes)):
-        if i < period - 1:
-            result.append(None)
-        else:
-            window = closes[i - period + 1: i + 1]
-            result.append(sum(window) / period)
-    return result
-
-
-# ----------------------------------------------------------------------
-# 策略实现
-# ----------------------------------------------------------------------
-def strategy_ma_cross(bars, params):
-    """双均线策略：快线上穿慢线买入，下穿卖出"""
-    fast = int(params.get("fast", 5))
-    slow = int(params.get("slow", 20))
-    closes = [b["close"] for b in bars]
-
-    ma_fast = sma(closes, fast)
-    ma_slow = sma(closes, slow)
-
-    signals = []  # (date, action)  action: "buy" | "sell"
-    for i in range(1, len(bars)):
-        if ma_fast[i] is None or ma_slow[i] is None:
-            continue
-        if ma_fast[i - 1] is None or ma_slow[i - 1] is None:
-            continue
-        # 金叉
-        if ma_fast[i - 1] <= ma_slow[i - 1] and ma_fast[i] > ma_slow[i]:
-            signals.append((bars[i]["date"], "buy"))
-        # 死叉
-        elif ma_fast[i - 1] >= ma_slow[i - 1] and ma_fast[i] < ma_slow[i]:
-            signals.append((bars[i]["date"], "sell"))
-
-    return signals
-
-
-def strategy_momentum(bars, params):
-    """动量策略：N 日涨幅超过阈值买入，低于阈值卖出"""
-    lookback = int(params.get("lookback", 10))
-    threshold = float(params.get("threshold", 0.03))
-    closes = [b["close"] for b in bars]
-
-    signals = []
-    for i in range(lookback, len(bars)):
-        ret = (closes[i] - closes[i - lookback]) / closes[i - lookback]
-        if ret > threshold:
-            signals.append((bars[i]["date"], "buy"))
-        elif ret < -threshold:
-            signals.append((bars[i]["date"], "sell"))
-
-    return signals
-
-
-def strategy_mean_reversion(bars, params):
-    """均值回归策略：价格偏离均线超过阈值时反向操作"""
-    period = int(params.get("period", 20))
-    deviation = float(params.get("deviation", 0.03))
-    closes = [b["close"] for b in bars]
-    ma = sma(closes, period)
-
-    signals = []
-    for i in range(period, len(bars)):
-        if ma[i] is None:
-            continue
-        diff = (closes[i] - ma[i]) / ma[i]
-        if diff < -deviation:
-            signals.append((bars[i]["date"], "buy"))   # 跌破均值，买入
-        elif diff > deviation:
-            signals.append((bars[i]["date"], "sell"))  # 超过均值，卖出
-
-    return signals
+# 技术指标与策略实现已迁移至 strategies 包（base/indicators/builtin），
+# 回测与实盘共用同一份策略代码，详见 bridge/strategies/
 
 
 def _to_xtcode(raw):
@@ -293,11 +220,6 @@ def fetch_real_bars(symbol, start_date, end_date, dividend_type="front"):
             return cached, None
         return None, "\u83b7\u53d6\u6570\u636e\u5931\u8d25: {}".format(e)
 
-STRATEGY_MAP = {
-    "ma_cross": strategy_ma_cross,
-    "momentum": strategy_momentum,
-    "mean_reversion": strategy_mean_reversion,
-}
 
 
 # ----------------------------------------------------------------------
@@ -346,13 +268,31 @@ def run_backtest(params):
     if len(bars) < 5:
         raise ValueError("回测数据不足，请扩大时间范围")
 
-    # 生成信号
-    strategy_fn = STRATEGY_MAP.get(strategy_type)
-    if strategy_fn is None:
-        # custom 类型也走 ma_cross
-        strategy_fn = strategy_ma_cross
+    # 生成信号（策略框架：registry 加载 + 逐 bar 调 on_bar，回测与实盘共用同一逻辑）
+    load_all()
+    try:
+        strat_cls = get_strategy(strategy_type)
+    except KeyError:
+        log("未知策略类型 {}，回落 ma_cross".format(strategy_type))
+        strat_cls = get_strategy("ma_cross")
+    strat = strat_cls(strategy_params)
 
-    signals = strategy_fn(bars, strategy_params)
+    ctx = Context()
+    ctx.symbol = symbol
+    ctx.is_backtest = True
+    ctx.period = "1d"
+    strat.on_init(ctx)
+    strat.on_after_init(ctx)
+
+    signal_map = {}  # date -> Signal
+    for i, bar in enumerate(bars):
+        ctx.bars = bars[:i + 1]
+        ctx.barpos = i
+        sig = strat.on_bar(bar, ctx)
+        if sig is not None and sig.action in ("buy", "sell", "hold"):
+            signal_map[bar["date"]] = sig
+    strat.on_stop(ctx)
+    log("生成信号 {} 个（策略 {}）".format(len(signal_map), strategy_type))
 
     # 模拟交易 + 逐日计算净值（在同一个循环中完成）
     cash = initial_capital
@@ -361,17 +301,46 @@ def run_backtest(params):
     trades = []
     equity_curve = []
 
-    # 构建日期到信号的索引
-    signal_map = {}
-    for date_str, action in signals:
-        signal_map[date_str] = action
-
     for bar in bars:
         date_str = bar["date"]
-        action = signal_map.get(date_str)
+        sig = signal_map.get(date_str)
+        action = sig.action if sig else None
+        target_pos = sig.target_position if sig else None
 
-        # 执行交易信号
-        if action == "buy" and position == 0:
+        # 目标仓位调仓（支持 target_position 信号；内置策略不触发，走下方 buy/sell）
+        if target_pos is not None:
+            total_asset = cash + position * bar["close"]
+            target_value = total_asset * target_pos
+            target_qty = int(target_value / bar["close"] / 100) * 100
+            if target_qty > position:
+                delta = target_qty - position
+                price = bar["close"] * (1 + slippage_rate)
+                cost = price * delta * (1 + commission_rate)
+                if cost <= cash and delta > 0:
+                    cash -= cost
+                    if position == 0:
+                        cost_price = price
+                    else:
+                        cost_price = (cost_price * position + price * delta) / target_qty
+                    position = target_qty
+                    trades.append({"date": date_str, "side": "buy", "symbol": symbol,
+                                   "price": round(price, 2), "quantity": delta,
+                                   "amount": round(cost, 2), "pnl": None})
+            elif target_qty < position:
+                delta = position - target_qty
+                price = bar["close"] * (1 - slippage_rate)
+                proceeds = price * delta * (1 - commission_rate)
+                pnl = proceeds - cost_price * delta
+                cash += proceeds
+                position = target_qty
+                if position == 0:
+                    cost_price = 0.0
+                trades.append({"date": date_str, "side": "sell", "symbol": symbol,
+                               "price": round(price, 2), "quantity": delta,
+                               "amount": round(proceeds, 2), "pnl": round(pnl, 2)})
+
+        # 执行交易信号（buy/sell，与改造前撮合逻辑完全一致）
+        elif action == "buy" and position == 0:
             price = bar["close"] * (1 + slippage_rate)
             max_qty = int(cash / (price * (1 + commission_rate)) / 100) * 100
             if max_qty > 0:
