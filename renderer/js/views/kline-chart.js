@@ -251,7 +251,7 @@ import * as echarts from 'echarts';
       } else {
         // 蜡烛图模式
         series.push({
-          name: "K线", type: "candlestick", data: ohlc, barCategoryGap: "20%",
+          name: "K线", type: "candlestick", data: ohlc, barGap: "30%", barCategoryGap: "20%",
           itemStyle: {
             color: "transparent", color0: "#22c55e",
             borderColor: "#ef4444", borderColor0: "#22c55e",
