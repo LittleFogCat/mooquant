@@ -249,7 +249,7 @@ import * as echarts from 'echarts';
       } else {
         // 蜡烛图模式
         series.push({
-          name: "K线", type: "candlestick", data: ohlc,
+          name: "K线", type: "candlestick", data: ohlc, barMaxWidth: 25, barMinWidth: 2,
           itemStyle: {
             color: "transparent", color0: "#22c55e",
             borderColor: "#ef4444", borderColor0: "#22c55e",
