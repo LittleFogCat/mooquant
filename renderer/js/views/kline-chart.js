@@ -26,8 +26,8 @@ import * as echarts from 'echarts';
   var PERIOD_OPTIONS = [
     { value: "1d", label: "日K" },
     { value: "1w", label: "周K" },
-    { value: "1M", label: "月K" },
-    { value: "1h", label: "60分" },
+    { value: "1mon", label: "月K" },
+    { value: "60m", label: "60分" },
     { value: "30m", label: "30分" },
     { value: "15m", label: "15分" },
     { value: "5m", label: "5分" },

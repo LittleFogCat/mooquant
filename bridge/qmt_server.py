@@ -295,6 +295,141 @@ def _generate_mock_bars(code, count):
     return bars
 
 
+def _parse_bars(df):
+    """Parse xtquant DataFrame into list of bar dicts"""
+    bars = []
+    if df is not None and len(df) > 0:
+        for idx, row in df.iterrows():
+            date_str = str(idx)
+            if len(date_str) == 8:
+                date_fmt = date_str[:4] + "-" + date_str[4:6] + "-" + date_str[6:8]
+            else:
+                date_fmt = date_str
+            bars.append({
+                "time": int(row.get("time", 0) or 0),
+                "date": date_fmt,
+                "open": float(row.get("open", 0) or 0),
+                "high": float(row.get("high", 0) or 0),
+                "low":  float(row.get("low",  0) or 0),
+                "close": float(row.get("close", 0) or 0),
+                "volume": float(row.get("volume", 0) or 0) * 100,
+                "amount": float(row.get("amount", 0) or 0),
+            })
+    return bars
+
+
+def _merge_bars(bars):
+    """Merge multiple bars into one OHLCV bar"""
+    if not bars:
+        return None
+    return {
+        "time": bars[0]["time"],
+        "date": bars[0]["date"],
+        "open": bars[0]["open"],
+        "high": max(b["high"] for b in bars),
+        "low": min(b["low"] for b in bars),
+        "close": bars[-1]["close"],
+        "volume": sum(b["volume"] for b in bars),
+        "amount": sum(b.get("amount", 0) for b in bars),
+    }
+
+
+def _aggregate_bars(bars, target_period):
+    """Aggregate base-period bars into target-period bars.
+
+    Weekly/Monthly: aggregate from daily bars.
+    5m/15m/30m/60m: aggregate from 1-minute bars.
+    """
+    if not bars:
+        return []
+    if target_period == "1w":
+        return _aggregate_weekly(bars)
+    elif target_period == "1mon":
+        return _aggregate_monthly(bars)
+    elif target_period in ("5m", "15m", "30m", "60m"):
+        n = int(target_period[:-1])
+        return _aggregate_minutes(bars, n)
+    return bars
+
+
+def _aggregate_weekly(bars):
+    """Aggregate daily bars into weekly bars (ISO week)."""
+    from datetime import datetime
+    result = []
+    current_key = None
+    current_group = []
+    for bar in bars:
+        try:
+            dt = datetime.strptime(bar["date"][:10], "%Y-%m-%d")
+        except (ValueError, KeyError, TypeError):
+            continue
+        iso = dt.isocalendar()
+        week_key = (iso[0], iso[1])
+        if week_key != current_key:
+            if current_group:
+                result.append(_merge_bars(current_group))
+            current_key = week_key
+            current_group = [bar]
+        else:
+            current_group.append(bar)
+    if current_group:
+        result.append(_merge_bars(current_group))
+    return result
+
+
+def _aggregate_monthly(bars):
+    """Aggregate daily bars into monthly bars (by YYYY-MM)."""
+    result = []
+    current_key = None
+    current_group = []
+    for bar in bars:
+        try:
+            month_key = bar["date"][:7]  # YYYY-MM
+        except (KeyError, TypeError):
+            continue
+        if month_key != current_key:
+            if current_group:
+                result.append(_merge_bars(current_group))
+            current_key = month_key
+            current_group = [bar]
+        else:
+            current_group.append(bar)
+    if current_group:
+        result.append(_merge_bars(current_group))
+    return result
+
+
+def _aggregate_minutes(bars, n):
+    """Aggregate 1-minute bars into N-minute bars.
+
+    Groups by trading day first, then chunks every n bars within each day.
+    This correctly handles the midday break (no bars during 11:30-13:00).
+    """
+    from datetime import datetime
+    days = {}
+    day_order = []
+    for bar in bars:
+        if bar.get("date"):
+            day = bar["date"][:10]
+        elif bar.get("time"):
+            day = datetime.fromtimestamp(bar["time"]).strftime("%Y-%m-%d")
+        else:
+            continue
+        if day not in days:
+            days[day] = []
+            day_order.append(day)
+        days[day].append(bar)
+
+    result = []
+    for day in day_order:
+        day_bars = days[day]
+        for i in range(0, len(day_bars), n):
+            chunk = day_bars[i:i + n]
+            if chunk:
+                result.append(_merge_bars(chunk))
+    return result
+
+
 def handle_quote_history(params):
     code = to_xtcode(params.get("code", ""))
     if not code:
@@ -304,59 +439,121 @@ def handle_quote_history(params):
     port = int(params.get("port", 58610))
     dividend_type = params.get("dividend_type", "front")
 
-    # 1. 先查数据库缓存
-    cached = db_cache.query_bars(code, period, count=count, dividend_type=dividend_type)
-    if cached and (count <= 0 or len(cached) >= count):
-        log("history: {} bars from DB cache (code={} period={})".format(len(cached), code, period))
-        return {"bars": cached, "count": len(cached), "cached": True}
+    # --- Determine base period ---
+    # Weekly/Monthly K: aggregate from daily bars
+    # 5m/15m/30m/60m: aggregate from 1-minute bars
+    base_period = period
+    need_aggregate = False
+    if period in ("1w", "1mon"):
+        base_period = "1d"
+        need_aggregate = True
+    elif period in ("5m", "15m", "30m", "60m"):
+        base_period = "1m"
+        need_aggregate = True
 
-    # 2. 缓存不够，从 xtquant 获取
+    if not need_aggregate:
+        # --- Direct fetch (1d, 1m, tick, etc.) ---
+        cached = db_cache.query_bars(code, period, count=count, dividend_type=dividend_type)
+        if cached and (count <= 0 or len(cached) >= count):
+            log("history: {} bars from DB cache (code={} period={})".format(len(cached), code, period))
+            return {"bars": cached, "count": len(cached), "cached": True}
+
+        ensure_connected(port)
+        xt = _XTDATA
+        log("history: fetching from xtquant (code={} period={} count={})".format(code, period, count))
+        try:
+            xt.download_history_data(code, period=period, incrementally=True)
+        except Exception as e:
+            log("download_history_data warning: {}".format(e))
+        try:
+            data = xt.get_market_data_ex([], [code], period=period, count=count, dividend_type=dividend_type) or {}
+            df = data.get(code)
+            bars = _parse_bars(df)
+            log("history: got {} bars from xtquant".format(len(bars)))
+            if bars:
+                saved = db_cache.save_bars(code, period, bars, dividend_type=dividend_type)
+                log("history: saved {} new bars to DB".format(saved))
+            if not bars:
+                log("history: no data for {} period={}".format(code, period))
+                if cached:
+                    return {"bars": cached, "count": len(cached), "cached": True}
+            return {"bars": bars, "count": len(bars)}
+        except Exception as e:
+            log("get_market_data_ex failed: {}".format(e))
+            if cached:
+                log("history: returning {} bars from DB cache (xtquant failed)".format(len(cached)))
+                return {"bars": cached, "count": len(cached), "cached": True}
+            return {"bars": [], "count": 0, "error": str(e)}
+
+    # --- Aggregation path ---
+    # Calculate how many base bars we need
+    base_count = count
+    if count > 0:
+        multipliers = {"1w": 7, "1mon": 31, "60m": 60, "30m": 30, "15m": 15, "5m": 5}
+        mult = multipliers.get(period, 1)
+        base_count = count * mult + mult  # extra margin for boundaries
+
+    # 1. Query DB cache for base period
+    cached = db_cache.query_bars(code, base_period, count=base_count, dividend_type=dividend_type)
+    if cached and (base_count <= 0 or len(cached) >= base_count):
+        aggregated = _aggregate_bars(cached, period)
+        log("history: {} bars aggregated from {} cached {} bars (code={})".format(
+            len(aggregated), len(cached), base_period, code))
+        if count > 0:
+            aggregated = aggregated[-count:]
+        return {"bars": aggregated, "count": len(aggregated), "cached": True, "aggregated": True}
+
+    # 2. Fetch base bars from xtquant
     ensure_connected(port)
     xt = _XTDATA
-    log("history: fetching from xtquant (code={} period={} count={})".format(code, period, count))
+    log("history: fetching base {} from xtquant (code={} target={} count={})".format(
+        base_period, code, period, base_count))
     try:
-        xt.download_history_data(code, period=period, incrementally=True)
+        xt.download_history_data(code, period=base_period, incrementally=True)
     except Exception as e:
         log("download_history_data warning: {}".format(e))
     try:
-        data = xt.get_market_data_ex([], [code], period=period, count=count, dividend_type=dividend_type) or {}
+        data = xt.get_market_data_ex([], [code], period=base_period, count=base_count, dividend_type=dividend_type) or {}
         df = data.get(code)
-        bars = []
-        if df is not None and len(df) > 0:
-            for idx, row in df.iterrows():
-                date_str = str(idx)
-                if len(date_str) == 8:
-                    date_fmt = date_str[:4] + "-" + date_str[4:6] + "-" + date_str[6:8]
-                else:
-                    date_fmt = date_str
-                bars.append({
-                    "time": int(row.get("time", 0) or 0),
-                    "date": date_fmt,
-                    "open": float(row.get("open", 0) or 0),
-                    "high": float(row.get("high", 0) or 0),
-                    "low":  float(row.get("low",  0) or 0),
-                    "close": float(row.get("close", 0) or 0),
-                    "volume": float(row.get("volume", 0) or 0) * 100,
-                    "amount": float(row.get("amount", 0) or 0),
-                })
-        log("history: got {} bars from xtquant".format(len(bars)))
+        bars = _parse_bars(df)
+        log("history: got {} base {} bars from xtquant".format(len(bars), base_period))
 
-        # 3. 保存到数据库
+        # Save base bars to DB
         if bars:
-            saved = db_cache.save_bars(code, period, bars, dividend_type=dividend_type)
-            log("history: saved {} new bars to DB".format(saved))
+            saved = db_cache.save_bars(code, base_period, bars, dividend_type=dividend_type)
+            log("history: saved {} new base bars to DB".format(saved))
 
-        if not bars:
-            log("history: no data for {} period={}".format(code, period))
-            if cached:
-                return {"bars": cached, "count": len(cached), "cached": True}
-        return {"bars": bars, "count": len(bars)}
+        # Merge cached + fresh, deduplicate by date
+        all_bars = (cached or []) + bars
+        seen = set()
+        deduped = []
+        for b in all_bars:
+            key = b.get("date") or str(b.get("time", 0))
+            if key not in seen:
+                seen.add(key)
+                deduped.append(b)
+
+        # Aggregate
+        aggregated = _aggregate_bars(deduped, period)
+        log("history: {} bars aggregated from {} {} bars".format(len(aggregated), len(deduped), base_period))
+
+        if not aggregated and cached:
+            aggregated = _aggregate_bars(cached, period)
+
+        if count > 0:
+            aggregated = aggregated[-count:]
+
+        return {"bars": aggregated, "count": len(aggregated), "aggregated": True}
     except Exception as e:
         log("get_market_data_ex failed: {}".format(e))
         if cached:
-            log("history: returning {} bars from DB cache (xtquant failed)".format(len(cached)))
-            return {"bars": cached, "count": len(cached), "cached": True}
+            aggregated = _aggregate_bars(cached, period)
+            log("history: returning {} aggregated bars from cache (xtquant failed)".format(len(aggregated)))
+            if count > 0:
+                aggregated = aggregated[-count:]
+            return {"bars": aggregated, "count": len(aggregated), "cached": True, "aggregated": True}
         return {"bars": [], "count": 0, "error": str(e)}
+
 
 def handle_quote_subscribe(params):
     """订阅实时行情"""
