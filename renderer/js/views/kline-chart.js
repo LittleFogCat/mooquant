@@ -43,15 +43,7 @@ import * as echarts from 'echarts';
   ];
   var LINE_CHART_THRESHOLD = 200; // 超过此数量降级为收盘价折线图
 
-  // Calculate bar width based on visible bar count and chart width.
-  // Keeps candle/volume bars at consistent width, not scaling with zoom.
-  function calcBarWidth(totalBars, dzStart, dzEnd, chartWidth) {
-    var visibleCount = Math.max(1, Math.ceil(totalBars * (dzEnd - dzStart) / 100));
-    var availableWidth = (chartWidth || 600) * 0.86; // grid left 8% + right 6%
-    var categoryWidth = availableWidth / visibleCount;
-    var barW = categoryWidth * 0.7; // bar occupies 70% of category slot
-    return Math.min(Math.max(barW, 1), 10); // clamp 1-10px
-  }
+
 
   // ---- 主函数：mount ----
   function mount(container, opts) {
@@ -297,13 +289,6 @@ import * as echarts from 'echarts';
         itemStyle: { color: function (p) { var d = ohlc[p.dataIndex]; return d && d[1] >= d[0] ? "rgba(239,68,68,0.5)" : "rgba(34,197,94,0.5)"; } },
       });
 
-      // Set dynamic barWidth on candlestick and volume bar
-      var _barW = calcBarWidth(bars.length, dzStart, dzEnd, chartDiv.clientWidth);
-      var _candleIdx = -1, _volIdx = -1;
-      for (var _si = 0; _si < series.length; _si++) {
-        if (series[_si].type === "candlestick") { _candleIdx = _si; series[_si].barWidth = _barW; }
-        if (series[_si].name === "成交量") { _volIdx = _si; series[_si].barWidth = _barW; }
-      }
 
       // ---- Tooltip ----
       var tooltipFormatter;
@@ -392,26 +377,6 @@ import * as echarts from 'echarts';
         series: series
       }, true);
 
-      // Dynamically adjust barWidth on dataZoom
-      var _updatingBW = false;
-      chart.off("dataZoom");
-      chart.on("dataZoom", function () {
-        if (_updatingBW) return;
-        var opt = chart.getOption();
-        var dz = opt.dataZoom[0] || {};
-        var ns = dz.start != null ? dz.start : 0;
-        var ne = dz.end != null ? dz.end : 100;
-        var newBW = calcBarWidth(bars.length, ns, ne, chartDiv.clientWidth);
-        if (state._lastBarWidth == null || Math.abs(newBW - state._lastBarWidth) > 0.5) {
-          state._lastBarWidth = newBW;
-          _updatingBW = true;
-          var updSeries = [];
-          if (_candleIdx >= 0) updSeries[_candleIdx] = { barWidth: newBW };
-          if (_volIdx >= 0) updSeries[_volIdx] = { barWidth: newBW };
-          chart.setOption({ series: updSeries });
-          _updatingBW = false;
-        }
-      });
 
       rebuildSettingsPanel();
     }
