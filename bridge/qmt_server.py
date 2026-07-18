@@ -295,16 +295,28 @@ def _generate_mock_bars(code, count):
     return bars
 
 
+def _format_date_str(s):
+    """Format xtquant date index to YYYY-MM-DD or YYYY-MM-DD HH:mm.
+
+    Handles:
+      8 digits  (YYYYMMDD)       -> YYYY-MM-DD
+      12 digits (YYYYMMDDHHMM)   -> YYYY-MM-DD HH:mm
+      14 digits (YYYYMMDDHHMMSS) -> YYYY-MM-DD HH:mm
+    """
+    digits = ''.join(c for c in str(s) if c.isdigit())
+    if len(digits) == 8:
+        return digits[:4] + "-" + digits[4:6] + "-" + digits[6:8]
+    elif len(digits) >= 12:
+        return digits[:4] + "-" + digits[4:6] + "-" + digits[6:8] + " " + digits[8:10] + ":" + digits[10:12]
+    return str(s)
+
+
 def _parse_bars(df):
     """Parse xtquant DataFrame into list of bar dicts"""
     bars = []
     if df is not None and len(df) > 0:
         for idx, row in df.iterrows():
-            date_str = str(idx)
-            if len(date_str) == 8:
-                date_fmt = date_str[:4] + "-" + date_str[4:6] + "-" + date_str[6:8]
-            else:
-                date_fmt = date_str
+            date_fmt = _format_date_str(idx)
             bars.append({
                 "time": int(row.get("time", 0) or 0),
                 "date": date_fmt,

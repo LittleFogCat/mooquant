@@ -18,7 +18,15 @@ import * as echarts from 'echarts';
   }
   function toDate(b) {
     if (b.date) return b.date;
-    if (b.time) return new Date(b.time * 1000).toISOString().slice(0, 10);
+    if (b.time) {
+      var d = new Date(b.time * 1000);
+      var yyyy = d.getFullYear();
+      var MM = String(d.getMonth() + 1).padStart(2, "0");
+      var dd = String(d.getDate()).padStart(2, "0");
+      var HH = String(d.getHours()).padStart(2, "0");
+      var mm = String(d.getMinutes()).padStart(2, "0");
+      return yyyy + "-" + MM + "-" + dd + " " + HH + ":" + mm;
+    }
     return "";
   }
 
