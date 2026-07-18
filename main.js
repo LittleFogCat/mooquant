@@ -88,7 +88,7 @@ function createWindow(config) {
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: false, webSecurity: true },
   });
   mainWindow.loadFile(path.join(__dirname, "dist", "renderer", "index.html"));
-  mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.once("ready-to-show", () => { mainWindow.maximize(); mainWindow.show(); });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
   mainWindow.on("closed", () => { mainWindow = null; });
 }
