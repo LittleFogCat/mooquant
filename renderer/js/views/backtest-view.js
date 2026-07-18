@@ -5,6 +5,7 @@ import { Mandarin } from 'flatpickr/dist/l10n/zh';
 
 flatpickr.localize(Mandarin);
 import * as KlineChart from './kline-chart.js';
+import * as StockSearch from './stock-search.js';
 
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;","/":"&#x2F;" }[c])); }
   function fmtPct(n) { if (n == null || isNaN(n)) return "-"; return (n >= 0 ? "+" : "") + Number(n).toFixed(2) + "%"; }
@@ -173,9 +174,15 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
 
   function renderKlineChart(bars, trades, vm) {
     const container = document.getElementById("btKlineChart");
+    if (!container || !bars || bars.length < 2) return;
+    var barCount = bars.length;
+    var visibleBars = Math.min(barCount, 150);
+    var dzStart = Math.max(0, 100 - (visibleBars / barCount * 100));
     _klineChart = KlineChart.render(container, bars, {
       trades: trades || [],
       dividendType: (vm && vm.state && vm.state.dividendType) || "front",
+      dataZoomStart: dzStart,
+      dataZoomEnd: 100,
       onSettingsChange: function (settings) {
         if (settings.dividendType && vm) {
           vm.setField("dividendType", settings.dividendType);
