@@ -1,8 +1,4 @@
-/**
- * mookquant · 简易路由
- */
-(function () {
-  const PAGES = ["quote", "strategy", "backtest", "trade", "settings"];
+const PAGES = ["quote", "strategy", "backtest", "trade", "settings"];
   let _currentPage = "quote";
   const _handlers = {};
   const _leaveHandlers = {};
@@ -25,5 +21,4 @@
     const hash = location.hash.replace("#", "");
     switchPage(hash && PAGES.includes(hash) ? hash : "quote");
   }
-  window.AppRouter = { switchPage, onEnter, onLeave, currentPage, init, PAGES };
-})();
+  export { switchPage, onEnter, onLeave, currentPage, init, PAGES };

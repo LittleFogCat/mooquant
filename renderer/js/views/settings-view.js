@@ -1,8 +1,4 @@
-/**
- * mookquant · Settings View
- */
-(function () {
-  function escapeHtml(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;","/":"&#x2F;" }[c])); }
+function escapeHtml(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;","/":"&#x2F;" }[c])); }
   function render(root, vm) {
     function paint(state) {
       root.innerHTML = `
@@ -65,5 +61,4 @@
     }
     vm.subscribe(paint);
   }
-  window.SettingsView = { render };
-})();
+  export { render };

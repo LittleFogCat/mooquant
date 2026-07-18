@@ -1,4 +1,4 @@
-﻿/**
+/**
  * mookquant · Trade ViewModel
  *
  * 交易：下单、持仓、委托、账户信息。
@@ -105,4 +105,4 @@ class TradeViewModel {
   }
 }
 
-window.TradeViewModel = TradeViewModel;
+export { TradeViewModel };

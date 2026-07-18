@@ -77,4 +77,4 @@ class QuoteViewModel {
   }
 }
 
-window.QuoteViewModel = QuoteViewModel;
+export { QuoteViewModel };

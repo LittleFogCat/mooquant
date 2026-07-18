@@ -24,6 +24,11 @@ import json
 import sys
 import time
 import threading
+import os as _os_mod
+
+# SQLite cache module (same directory)
+sys.path.insert(0, _os_mod.path.dirname(_os_mod.path.abspath(__file__)))
+import db as db_cache
 
 
 # ----------------------------------------------------------------------
@@ -265,7 +270,7 @@ def _generate_mock_bars(code, count):
     seed_val = sum(ord(c) for c in code) + 42
     rng = random.Random(seed_val)
     base_price = 50 + rng.random() * 200
-    n = min(count if count > 0 else 60, 120)
+    n = min(count if count > 0 else 60, 500)
     bars = []
     price = base_price
     now = datetime.now()
@@ -297,15 +302,24 @@ def handle_quote_history(params):
     period = params.get("period", "1d")
     count = int(params.get("count", -1))
     port = int(params.get("port", 58610))
+    dividend_type = params.get("dividend_type", "front")
+
+    # 1. 先查数据库缓存
+    cached = db_cache.query_bars(code, period, count=count, dividend_type=dividend_type)
+    if cached and (count <= 0 or len(cached) >= count):
+        log("history: {} bars from DB cache (code={} period={})".format(len(cached), code, period))
+        return {"bars": cached, "count": len(cached), "cached": True}
+
+    # 2. 缓存不够，从 xtquant 获取
     ensure_connected(port)
     xt = _XTDATA
-    log("history: {} period={} count={}".format(code, period, count))
+    log("history: fetching from xtquant (code={} period={} count={})".format(code, period, count))
     try:
         xt.download_history_data(code, period=period, incrementally=True)
     except Exception as e:
         log("download_history_data warning: {}".format(e))
     try:
-        data = xt.get_market_data_ex([], [code], period=period, count=count) or {}
+        data = xt.get_market_data_ex([], [code], period=period, count=count, dividend_type=dividend_type) or {}
         df = data.get(code)
         bars = []
         if df is not None and len(df) > 0:
@@ -326,14 +340,23 @@ def handle_quote_history(params):
                     "amount": float(row.get("amount", 0) or 0),
                 })
         log("history: got {} bars from xtquant".format(len(bars)))
+
+        # 3. 保存到数据库
+        if bars:
+            saved = db_cache.save_bars(code, period, bars, dividend_type=dividend_type)
+            log("history: saved {} new bars to DB".format(saved))
+
         if not bars:
-            bars = _generate_mock_bars(code, count)
-            log("history: no data, using mock")
+            log("history: no data for {} period={}".format(code, period))
+            if cached:
+                return {"bars": cached, "count": len(cached), "cached": True}
         return {"bars": bars, "count": len(bars)}
     except Exception as e:
-        log("get_market_data_ex failed ({}), using mock data".format(e))
-        bars = _generate_mock_bars(code, count)
-        return {"bars": bars, "count": len(bars)}
+        log("get_market_data_ex failed: {}".format(e))
+        if cached:
+            log("history: returning {} bars from DB cache (xtquant failed)".format(len(cached)))
+            return {"bars": cached, "count": len(cached), "cached": True}
+        return {"bars": [], "count": 0, "error": str(e)}
 
 def handle_quote_subscribe(params):
     """订阅实时行情"""
@@ -627,7 +650,121 @@ def handle_trade_account(params):
 # ----------------------------------------------------------------------
 # 调度
 # ----------------------------------------------------------------------
+# 股票列表管理
+# ----------------------------------------------------------------------
+
+def _xtcode_to_ui(code):
+    """600519.SH -> sh600519"""
+    head, _, market = code.upper().partition(".")
+    return market.lower() + head, head, market
+
+
+def handle_stock_sync(params):
+    """从 xtquant 拉取多板块股票列表，存入 SQLite + 导出 JSON 缓存
+
+    同步板块：沪深A股、创业板、科创板、京市A股（北交所）、沪深ETF
+    按优先级标记 type：ETF > 北交所 > 科创板 > 创业板 > A股
+    使用 get_instrument_detail_list() 批量获取详情
+    """
+    import json as _json
+    import io as _io
+    import contextlib as _ctx
+
+    port = int(params.get("port", 58610)) if params else 58610
+    ensure_connected(port)
+    xt = _XTDATA
+
+    # 1. 按优先级获取各板块代码（高优先级先入，低优先级不覆盖）
+    #    创业板/科创板是沪深A股的子集，所以先标记特殊类型
+    sectors_priority = [
+        ("沪深ETF", "ETF"),
+        ("京市A股", "北交所"),
+        ("科创板", "科创板"),
+        ("创业板", "创业板"),
+        ("沪深A股", "A股"),
+    ]
+
+    all_codes = {}  # xtcode -> type
+    _suppress = _io.StringIO()
+    with _ctx.redirect_stdout(_suppress):
+        for sector_name, stock_type in sectors_priority:
+            codes = xt.get_stock_list_in_sector(sector_name)
+            for code in codes:
+                if code not in all_codes:
+                    all_codes[code] = stock_type
+            log("stock.sync: {} -> {} codes".format(sector_name, len(codes)))
+
+    log("stock.sync: total unique codes: {}".format(len(all_codes)))
+    if not all_codes:
+        return {"count": 0, "error": "未获取到股票列表"}
+
+    # 2. 批量获取详情
+    code_list = list(all_codes.keys())
+    with _ctx.redirect_stdout(_suppress):
+        details = xt.get_instrument_detail_list(code_list)
+    log("stock.sync: got {} details via batch API".format(len(details)))
+
+    # 3. 构建股票列表
+    stocks = []
+    for code in code_list:
+        detail = details.get(code) or {}
+        name = detail.get("InstrumentName", "")
+        if not name:
+            continue
+        head, _, market = code.upper().partition(".")
+        ui_code = market.lower() + head
+        stocks.append({
+            "code": ui_code,
+            "xtcode": code,
+            "name": name,
+            "exchange": market,
+            "type": all_codes[code],
+        })
+
+    log("stock.sync: {} valid stocks".format(len(stocks)))
+
+    # 4. 存入数据库
+    saved = db_cache.save_stocks(stocks)
+    log("stock.sync: saved {} stocks to DB".format(saved))
+
+    # 5. 导出 JSON 缓存（供 mock 模式使用）
+    project_root = _os_mod.path.dirname(_os_mod.path.dirname(_os_mod.path.abspath(__file__)))
+    cache_path = _os_mod.path.join(project_root, "config", "stocks_cache.json")
+    cache_data = [
+        {"code": s["code"], "name": s["name"], "exchange": s["exchange"], "type": s["type"]}
+        for s in stocks
+    ]
+    with open(cache_path, "w", encoding="utf-8") as f:
+        _json.dump(cache_data, f, ensure_ascii=False)
+    log("stock.sync: exported {} stocks to {}".format(len(cache_data), cache_path))
+
+    # 6. 统计
+    type_counts = {}
+    for s in stocks:
+        type_counts[s["type"]] = type_counts.get(s["type"], 0) + 1
+
+    return {
+        "count": saved,
+        "total": len(stocks),
+        "typeCounts": type_counts,
+        "stocks": cache_data[:20],
+    }
+
+
+def handle_stock_list(params):
+    """从数据库读取全部股票列表"""
+    db_cache.init_stocks_table()
+    count = db_cache.get_stock_count()
+    if count == 0:
+        return {"count": 0, "stocks": [], "empty": True}
+    stocks = db_cache.get_all_stocks()
+    return {"count": len(stocks), "stocks": stocks}
+
+
+# ----------------------------------------------------------------------
 METHOD_MAP = {
+    "stock.sync": handle_stock_sync,
+    "stock.list": handle_stock_list,
     "ping": handle_ping,
     "quote.snapshot": handle_quote_snapshot,
     "quote.history": handle_quote_history,

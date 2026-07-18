@@ -6,8 +6,10 @@ const facade = {
   quote: {
     query: (s) => ipcRenderer.invoke("quote:query", s),
     info: () => ipcRenderer.invoke("quote:info"),
-    history: (s, p, c) => ipcRenderer.invoke("quote:history", s, p, c),
+    history: (s, p, c, dt) => ipcRenderer.invoke("quote:history", s, p, c, dt),
     search: (q) => ipcRenderer.invoke("quote:search", q),
+    syncStocks: () => ipcRenderer.invoke("quote:syncStocks"),
+    stockList: () => ipcRenderer.invoke("quote:stockList"),
     status: () => ipcRenderer.invoke("quote:status"),
     onTick: (callback) => {
       const handler = (_e, data) => callback(data);
@@ -24,7 +26,7 @@ const facade = {
   },
   backtest: { run: (c) => ipcRenderer.invoke("backtest:run", c) },
   executor: {
-    start: (id) => ipcRenderer.invoke("executor:start", id),
+    start: (id, symbols) => ipcRenderer.invoke("executor:start", id, symbols),
     stop: (id) => ipcRenderer.invoke("executor:stop", id),
     status: (id) => ipcRenderer.invoke("executor:status", id),
     list: () => ipcRenderer.invoke("executor:list"),

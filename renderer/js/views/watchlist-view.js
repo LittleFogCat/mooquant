@@ -1,8 +1,4 @@
-/**
- * mookquant · Watchlist View
- */
-(function () {
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;","/":"&#x2F;" }[c])); }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;","/":"&#x2F;" }[c])); }
   function fmt(n, d) { d = d || 2; if (n == null || isNaN(n)) return "-"; return Number(n).toLocaleString("zh-CN", { minimumFractionDigits: d, maximumFractionDigits: d }); }
   function cls(n) { if (n > 0) return "up"; if (n < 0) return "down"; return "flat"; }
 
@@ -38,5 +34,4 @@
     }
     vm.subscribe(paint);
   }
-  window.WatchlistView = { render };
-})();
+  export { render };

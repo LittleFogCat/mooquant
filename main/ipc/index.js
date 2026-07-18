@@ -6,8 +6,10 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
   // ---- 行情 ----
   ipcMain.handle("quote:query", async (_e, s) => quoteService.query(s));
   ipcMain.handle("quote:info", async () => ({ mode: quoteService.source.mode, description: quoteService.source.description }));
-  ipcMain.handle("quote:history", async (_e, s, p, c) => quoteService.getHistory(s, p, c));
+  ipcMain.handle("quote:history", async (_e, s, p, c, dt) => quoteService.getHistory(s, p, c, dt));
     ipcMain.handle("quote:search", async (_e, q) => quoteService.search(q));
+  ipcMain.handle("quote:syncStocks", async () => quoteService.syncStocks());
+  ipcMain.handle("quote:stockList", async () => quoteService.getStockList());
   ipcMain.handle("quote:status", async () => quoteService.getStatus());
   // ---- App ----
   ipcMain.handle("app:info", async () => { const { app } = require("electron"); return { name: app.getName(), version: app.getVersion(), platform: process.platform }; });
@@ -33,7 +35,7 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
   }
   // ---- 策略执行 ----
   if (executorService) {
-    ipcMain.handle("executor:start", async (_e, id) => executorService.start(id));
+    ipcMain.handle("executor:start", async (_e, id, symbols) => executorService.start(id, symbols));
     ipcMain.handle("executor:stop", async (_e, id) => executorService.stop(id));
     ipcMain.handle("executor:status", async (_e, id) => executorService.getStatus(id));
     ipcMain.handle("executor:list", async () => executorService.listRunning());

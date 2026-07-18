@@ -1,8 +1,4 @@
-/**
- * mookquant · Status Toast View
- */
-(function () {
-  function render(root, state) {
+function render(root, state) {
     if (state.error) {
       root.textContent = state.error;
       root.className = "status error";
@@ -10,5 +6,4 @@
       root.className = "status hidden";
     }
   }
-  window.StatusToastView = { render };
-})();
+  export { render };

@@ -1,8 +1,10 @@
 /**
  * mookquant · 渲染层 Facade
+ * Electron 模式：使用 preload.js 注入的 window.mookquant.facade
+ * 浏览器模式：返回 mock facade
  */
-(function () {
-  if (window.mookquant && window.mookquant.facade) { window.AppFacade = window.mookquant.facade; return; }
+export function getFacade() {
+if (window.mookquant && window.mookquant.facade) { return window.mookquant.facade; }
   console.warn("[facade] 浏览器演示模式");
 
   const STOCK_LIST = [
@@ -51,13 +53,20 @@
   function searchStocks(q) {
     q = (q || "").trim().toLowerCase();
     if (!q) return [];
+    var isDigit = /^\d+$/.test(q);
+    var isChinese = /[\u4e00-\u9fa5]/.test(q);
     return STOCK_LIST.filter(s => {
-      if (s.code.includes(q) || s.name.includes(q)) return true;
-      if (window.PinyinUtils) {
-        var initials = window.PinyinUtils.getInitials(s.name);
-        if (initials.startsWith(q) || initials.includes(q)) return true;
+      if (isDigit) {
+        return s.code.replace(/^(sh|sz|bj)/, "").includes(q) || s.code.includes(q);
+      } else if (isChinese) {
+        return s.name.includes(q);
+      } else {
+        if (window.PinyinUtils) {
+          var initials = window.PinyinUtils.getInitials(s.name);
+          if (initials.startsWith(q) || initials.includes(q)) return true;
+        }
+        return false;
       }
-      return false;
     }).slice(0, 10);
   }
   async function mockQuery(rawSymbol) {
@@ -129,7 +138,7 @@
     if (!symbol) return { ok: false, error: "not found" };
     const preset = MOCK_TABLE[symbol];
     const base = preset ? preset.base : 50;
-    const n = Math.min(count || 60, 120);
+    const n = Math.min(count || 60, 500);
     const bars = []; let price = base;
     let sv = 0; for (let i = 0; i < symbol.length; i++) sv += symbol.charCodeAt(i);
     const rng = (i) => { const x = Math.sin(sv + i * 17) * 10000; return x - Math.floor(x); };
@@ -145,7 +154,7 @@
     return { ok: true, data: { bars: bars.reverse(), count: bars.length } };
   }
   var executorMock = {
-    start: async (id) => ({ ok: true, data: { strategyId: id, status: "running" } }),
+    start: async (id, symbols) => ({ ok: true, data: { strategyId: id, status: "running" } }),
     stop: async (id) => ({ ok: true, data: { strategyId: id, status: "stopped" } }),
     status: async (id) => ({ ok: true, data: { strategyId: id, status: "stopped" } }),
     list: async () => ({ ok: true, data: [] }),
@@ -155,12 +164,12 @@
     strategy: async () => [],
     equity: async () => [],
   };
-  window.AppFacade = {
-    quote: { query: mockQuery, info: async () => ({ mode: "mock", description: "前端 mock" }), history: async (s, p, c) => mockHistory(s, p, c),
+  return {
+    quote: { query: mockQuery, info: async () => ({ mode: "mock", description: "前端 mock" }), history: async (s, p, c, dt) => mockHistory(s, p, c),
       search: async (q) => ({ ok: true, data: searchStocks(q) }), status: async () => ({ mode: "mock", description: "mock", connected: false }) },
     strategy: strategyMock, backtest: backtestMock, trade: tradeMock, settings: settingsMock,
     app: { info: async () => ({ name: "mookquant", version: "0.2.0", platform: "browser" }), restart: async () => { location.reload(); } },
     executor: executorMock,
     logs: logsMock,
   };
-})();
+}

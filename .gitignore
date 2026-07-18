@@ -1,7 +1,8 @@
-﻿# 依赖
+# 依赖
 node_modules/
 .venv/
 .npm-cache/
+.npm-tmp-cache/
 
 # 打包输出
 dist/
@@ -18,17 +19,29 @@ Thumbs.db
 *.log
 npm-debug.log*
 
-# 环境
+# 环境配置
 .env
 .env.local
 
-# 临时
+# 临时/调试文件（下划线开头的脚本/输出）
+_*.js
+_*.py
+_*.out
 *.tmp
 .cache/
-*.out
-verify_output.txt
-_chk.js
-_p.js
+verify*
 
 # Python
 __pycache__/
+
+# SQLite 数据库
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# 运行时数据（日志/回测结果/策略配置/交易记录）
+data/logs/
+data/backtest_results/
+data/equity/
+data/trades/
+data/strategies/

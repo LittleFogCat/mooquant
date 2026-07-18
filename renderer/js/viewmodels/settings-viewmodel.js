@@ -34,4 +34,4 @@ class SettingsViewModel {
     this._set({ saved: false });
   }
 }
-window.SettingsViewModel = SettingsViewModel;
+export { SettingsViewModel };

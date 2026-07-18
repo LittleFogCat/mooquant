@@ -44,4 +44,4 @@ class WatchlistViewModel {
   startAutoRefresh() { this._timer = setInterval(() => this.refresh(), 10000); }
   stopAutoRefresh() { if (this._timer) clearInterval(this._timer); }
 }
-window.WatchlistViewModel = WatchlistViewModel;
+export { WatchlistViewModel };

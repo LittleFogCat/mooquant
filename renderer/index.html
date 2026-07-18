@@ -4,9 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>mookquant · 量化交易系统</title>
-  <link rel="stylesheet" href="css/base.css" />
-  <link rel="stylesheet" href="css/app.css" />
-  <link rel="stylesheet" href="vendor/flatpickr.min.css" />
 </head>
 <body>
   <div class="background-gradient"></div>
@@ -25,6 +22,7 @@
         <li class="nav-item" data-page="trade"><span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></span><span class="nav-label">交易</span></li>
         <li class="nav-item" data-page="settings"><span class="nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span><span class="nav-label">设置</span></li>
       </ul>
+      <button class="sidebar-toggle" id="sidebarToggle" title="?????"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg><span class="toggle-text">??</span></button>
       <div class="sidebar-footer">
         <div class="qmt-status" id="qmtStatus">
           <span class="status-dot mock"></span>
@@ -59,28 +57,6 @@
       </section>
     </main>
   </div>
-
-  <script src="vendor/echarts.min.js"></script>
-  <script src="vendor/flatpickr.min.js"></script>
-  <script src="vendor/flatpickr.zh.js"></script>
-  <script src="js/utils/pinyin.js"></script>
-  <script src="js/services/facade.js"></script>
-  <script src="js/router.js"></script>
-  <script src="js/viewmodels/quote-viewmodel.js"></script>
-  <script src="js/views/search-panel.js"></script>
-  <script src="js/views/result-card.js"></script>
-  <script src="js/views/status-toast.js"></script>
-  <script src="js/views/kline-view.js"></script>
-  <script src="js/viewmodels/watchlist-viewmodel.js"></script>
-  <script src="js/views/watchlist-view.js"></script>
-  <script src="js/viewmodels/strategy-viewmodel.js"></script>
-  <script src="js/views/strategy-view.js"></script>
-  <script src="js/viewmodels/backtest-viewmodel.js"></script>
-  <script src="js/views/backtest-view.js"></script>
-  <script src="js/viewmodels/trade-viewmodel.js"></script>
-  <script src="js/views/trade-view.js"></script>
-  <script src="js/viewmodels/settings-viewmodel.js"></script>
-  <script src="js/views/settings-view.js"></script>
-  <script src="js/bootstrap.js"></script>
+  <script type="module" src="/js/main.js"></script>
 </body>
 </html>

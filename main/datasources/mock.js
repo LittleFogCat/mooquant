@@ -5,9 +5,36 @@ const path = require("path");
 const fs2 = require("fs");
 
 let STOCK_LIST = [];
-try {
-  STOCK_LIST = JSON.parse(fs2.readFileSync(path.join(__dirname, "..", "..", "config", "a_stocks.json"), "utf-8"));
-} catch (e) { STOCK_LIST = []; }
+
+/**
+ * 加载股票列表：优先读 stocks_cache.json（DB 同步导出的全量列表），
+ * 回退到 a_stocks.json（30 只种子数据）
+ */
+function loadStockList() {
+  if (STOCK_LIST.length > 0) return STOCK_LIST;
+  // 1. 优先读全量缓存
+  try {
+    STOCK_LIST = JSON.parse(fs2.readFileSync(
+      path.join(__dirname, "..", "..", "config", "stocks_cache.json"), "utf-8"));
+    if (STOCK_LIST.length > 0) return STOCK_LIST;
+  } catch (e) { /* 缓存不存在，继续回退 */ }
+  // 2. 回退到种子数据
+  try {
+    STOCK_LIST = JSON.parse(fs2.readFileSync(
+      path.join(__dirname, "..", "..", "config", "a_stocks.json"), "utf-8"));
+  } catch (e) { STOCK_LIST = []; }
+  return STOCK_LIST;
+}
+
+/**
+ * 重新加载股票列表（sync 完成后调用以刷新内存缓存）
+ */
+function reloadStockList() {
+  STOCK_LIST = [];
+  return loadStockList();
+}
+
+loadStockList(); // 模块加载时初始化
 
 const MOCK_TABLE = {};
 for (const s of STOCK_LIST) { MOCK_TABLE[s.code] = { name: s.name, industry: s.industry, base: s.base }; }
@@ -37,10 +64,17 @@ function searchByName(query) {
   const q = (query || "").trim().toLowerCase();
   if (!q) return [];
   const { getInitials } = require("../utils/pinyin");
+  const isDigit = /^\d+$/.test(q);
+  const isChinese = /[\u4e00-\u9fa5]/.test(q);
   return STOCK_LIST.filter(s => {
-    if (s.name.includes(q) || s.code.includes(q) || s.code.replace(/^(sh|sz|bj)/, "").includes(q)) return true;
-    const initials = getInitials(s.name);
-    return initials.startsWith(q) || initials.includes(q);
+    if (isDigit) {
+      return s.code.replace(/^(sh|sz|bj)/, "").includes(q) || s.code.includes(q);
+    } else if (isChinese) {
+      return s.name.includes(q);
+    } else {
+      const initials = getInitials(s.name);
+      return initials.startsWith(q) || initials.includes(q);
+    }
   }).slice(0, 10).map(s => ({ code: s.code, name: s.name, industry: s.industry }));
 }
 
@@ -66,13 +100,13 @@ class MockDataSource {
       timestamp: now.toISOString() };
   }
   async search(query) { return searchByName(query); }
-  async getHistory(rawSymbol, period, count) {
+  async getHistory(rawSymbol, period, count, dividendType) {
     let symbol = normalize(rawSymbol);
     if (!symbol) { const m = searchByName(rawSymbol); if (m.length > 0) symbol = m[0].code; }
     if (!symbol) throw new Error("symbol not found");
     const preset = MOCK_TABLE[symbol];
     const base = preset ? preset.base : 50;
-    const n = Math.min(count || 60, 120);
+    const n = Math.min(count || 60, 500);
     const bars = [];
     let price = base;
     let seedVal = 0;
@@ -94,4 +128,4 @@ class MockDataSource {
   }
   dispose() {}
 }
-module.exports = { MockDataSource, searchByName, STOCK_LIST };
+module.exports = { MockDataSource, searchByName, loadStockList, reloadStockList, STOCK_LIST };

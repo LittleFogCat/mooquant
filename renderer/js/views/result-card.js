@@ -1,8 +1,4 @@
-/**
- * mookquant · Result Card View
- */
-(function () {
-  function escapeHtml(s) {
+function escapeHtml(s) {
     return String(s).replace(/[&<>"'\/]/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;",
       "\"": "&quot;", "'": "&#39;", "/": "&#x2F;",
@@ -39,7 +35,22 @@
 
   function render(root, state, mode) {
     if (!state.data) {
-      root.innerHTML = "";
+      root.innerHTML = `
+        <div class="quote-empty-state">
+          <svg class="empty-icon" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M3 3v18h18"/><path d="m7 14 4-4 4 4 5-5"/>
+          </svg>
+          <div class="empty-title">开始查询股票</div>
+          <div class="empty-desc">在上方搜索栏输入股票代码或名称，或点击下方热门股票快速查看</div>
+          <div class="empty-quick-tags">
+            <span class="quick-tag" onclick="window._quickQuery&&window._quickQuery('sh600519')">贵州茅台</span>
+            <span class="quick-tag" onclick="window._quickQuery&&window._quickQuery('sh600036')">招商银行</span>
+            <span class="quick-tag" onclick="window._quickQuery&&window._quickQuery('sz000001')">平安银行</span>
+            <span class="quick-tag" onclick="window._quickQuery&&window._quickQuery('sz300750')">宁德时代</span>
+            <span class="quick-tag" onclick="window._quickQuery&&window._quickQuery('sh601318')">中国平安</span>
+            <span class="quick-tag" onclick="window._quickQuery&&window._quickQuery('sz000858')">五粮液</span>
+          </div>
+        </div>`;
       return;
     }
     const d = state.data;
@@ -98,6 +109,4 @@
       }
     } else if (btn) { btn.style.display = "none"; }
   }
-  window.ResultCardView = { render: renderWithWatchlist };
-
-})();
+  export { render };

@@ -6,18 +6,23 @@
   "author": "mookquant",
   "license": "MIT",
   "scripts": {
-    "start": "chcp 65001 >nul & electron .",
-    "dev": "chcp 65001 >nul & electron . --enable-logging",
+    "start": "vite build && chcp 65001 >nul & electron .",
+    "dev": "vite build && chcp 65001 >nul & electron . --enable-logging",
+    "vite:dev": "vite",
+    "vite:build": "vite build",
+    "vite:preview": "vite preview",
     "bridge:install": "cd bridge && pip install -r requirements.txt",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
-    "dist:linux": "electron-builder --linux"
+    "dist:linux": "electron-builder --linux",
+    "vite:watch": "vite build --watch"
   },
   "devDependencies": {
     "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "vite": "^8.1.5"
   },
   "build": {
     "appId": "com.mookquant.desktop",
@@ -27,7 +32,9 @@
       "preload.js",
       "config/**",
       "main/**",
-      "renderer/**",
+      "dist/**",
+      "renderer/splash.html",
+      "renderer/css/**",
       "assets/**"
     ],
     "mac": {
@@ -49,5 +56,10 @@
         "deb"
       ]
     }
+  },
+  "dependencies": {
+    "echarts": "^6.1.0",
+    "flatpickr": "^4.6.13",
+    "pinyin-pro": "^3.28.1"
   }
 }

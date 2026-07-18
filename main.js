@@ -87,7 +87,7 @@ function createWindow(config) {
     title: "mookquant",
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: false, webSecurity: true },
   });
-  mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+  mainWindow.loadFile(path.join(__dirname, "dist", "renderer", "index.html"));
   mainWindow.once("ready-to-show", () => mainWindow.show());
   mainWindow.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
   mainWindow.on("closed", () => { mainWindow = null; });
@@ -132,6 +132,19 @@ app.whenReady().then(async () => {
     });
   }
   quoteService = new QuoteService({ source: dataSource, cacheTtlMs: config.cache?.ttlMs ?? 5000 });
+
+  // 预加载股票列表 + 后台同步（不阻塞启动）
+  quoteService._ensureStockList().then(async () => {
+    const cnt = quoteService._stockList ? quoteService._stockList.length : 0;
+    console.log("[main] 股票列表已加载:", cnt);
+    // QMT 模式下，若列表过少（DB 为空），触发后台全量同步
+    if (dataSource.mode === "qmt" && cnt < 100) {
+      console.log("[main] 开始后台同步股票列表...");
+      const r = await quoteService.syncStocks();
+      if (r.ok) console.log("[main] 股票列表同步完成:", r.data ? (r.data.total || r.data.count) : 0, "只");
+      else console.warn("[main] 股票列表同步失败:", r.error);
+    }
+  }).catch(e => console.warn("[main] 股票列表加载失败:", e.message));
 
   updateSplash(splash, "初始化交易数据源...", 50);
   backtestService = new BacktestService({ strategyService, config: configManager.qmt });

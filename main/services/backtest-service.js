@@ -21,10 +21,17 @@ class BacktestService {
     return this._engine;
   }
 
-  async run({ strategyId, startDate, endDate, initialCapital, commission, slippage }) {
+  async run({ strategyId, symbols, startDate, endDate, initialCapital, commission, slippage, dividendType }) {
     // 加载策略
     const strategy = await this.strategyService.getById(strategyId);
     if (!strategy) return { ok: false, error: "策略不存在: " + strategyId };
+
+    // 标的与策略解耦：回测时由调用方指定
+    const symbolList = (symbols || [])
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!symbolList.length) return { ok: false, error: "回测标的不能为空" };
 
     const engine = this._getEngine();
 
@@ -32,13 +39,14 @@ class BacktestService {
       strategy: {
         type: strategy.type,
         params: strategy.params,
-        symbols: strategy.symbols,
       },
+      symbols: symbolList,
       startDate,
       endDate,
       initialCapital: initialCapital || 1000000,
       commission: commission || 0.0003,
       slippage: slippage || 0.001,
+      dividendType: dividendType || "front",
     });
 
     return { ok: true, data: result };

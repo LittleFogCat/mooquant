@@ -190,11 +190,11 @@ class QmtDataSource {
     return result;
   }
 
-  async getHistory(rawSymbol, period = "1d", count = 30) {
+  async getHistory(rawSymbol, period = "1d", count = 30, dividendType = "front") {
     if (!this._ready) await this.init();
     const port = this._options.port || 58610;
     return await this._request("quote.history", {
-      code: rawSymbol, period, count, port,
+      code: rawSymbol, period, count, port, dividend_type: dividendType,
     });
   }
 
@@ -207,6 +207,27 @@ class QmtDataSource {
   }
 
   /** 在桥子进程退出时注册回调 */
+
+  /**
+   * 同步全量 A 股列表到数据库（从 xtquant 拉取）
+   * @returns {Promise<{count:number, stocks:Array, total:number}>}
+   */
+  async syncStocks() {
+    if (!this._ready) await this.init();
+    const port = this._options.port || 58610;
+    return await this._request("stock.sync", { port });
+  }
+
+  /**
+   * 从数据库读取全部股票列表
+   * @returns {Promise<{count:number, stocks:Array}>}
+   */
+  async getStockList() {
+    if (!this._ready) await this.init();
+    const port = this._options.port || 58610;
+    return await this._request("stock.list", { port });
+  }
+
   onExit(fn) {
     this._exitHandlers.push(fn);
   }

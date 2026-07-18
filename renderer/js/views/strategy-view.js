@@ -1,10 +1,4 @@
-/**
- * mookquant · Strategy View
- *
- * 策略管理界面：列表 + 运行状态 + 启动/停止 + 编辑模态框（含风控参数）。
- */
-(function () {
-  const TYPE_LABELS = {
+const TYPE_LABELS = {
     ma_cross: "双均线",
     momentum: "动量",
     mean_reversion: "均值回归",
@@ -45,7 +39,6 @@
       return '<tr>' +
         '<td><strong>' + escapeHtml(s.name) + '</strong>' + runInfo + '</td>' +
         '<td>' + escapeHtml(TYPE_LABELS[s.type] || s.type) + '</td>' +
-        '<td>' + escapeHtml((s.symbols || []).join(", ")) + '</td>' +
         '<td>' + statusBadge + '</td>' +
         '<td>' + escapeHtml(new Date(s.updatedAt).toLocaleDateString("zh-CN")) + '</td>' +
         '<td>' +
@@ -56,7 +49,7 @@
       '</tr>';
     }).join("");
     return '<table class="data-table">' +
-      '<thead><tr><th>名称</th><th>类型</th><th>标的</th><th>状态</th><th>更新日期</th><th>操作</th></tr></thead>' +
+      '<thead><tr><th>名称</th><th>类型</th><th>状态</th><th>更新日期</th><th>操作</th></tr></thead>' +
       '<tbody>' + rows + '</tbody>' +
     '</table>';
   }
@@ -84,8 +77,6 @@
               '<option value="archived" ' + (e.status === "archived" ? "selected" : "") + '>归档</option>' +
             '</select></div>' +
         '</div>' +
-        '<div class="form-group"><label class="form-label">标的代码（逗号分隔）</label>' +
-          '<input class="input-field" id="st_symbols" value="' + escapeHtml(e.symbols) + '" placeholder="如：sh600519, sz000001" /></div>' +
         '<div class="form-group"><label class="form-label">描述</label>' +
           '<textarea class="input-field" id="st_desc" placeholder="策略描述...">' + escapeHtml(e.description) + '</textarea></div>' +
         '<div class="form-group"><label class="form-label">策略参数 (JSON)</label>' +
@@ -108,7 +99,6 @@
       name: document.getElementById("st_name").value,
       type: document.getElementById("st_type").value,
       status: document.getElementById("st_status").value,
-      symbols: document.getElementById("st_symbols").value,
       description: document.getElementById("st_desc").value,
       params: document.getElementById("st_params").value,
       risk: document.getElementById("st_risk").value,
@@ -133,7 +123,10 @@
             if (s) vm.startEdit(s);
           } else if (action === "delete") {
             if (confirm("确认删除策略「" + (state.list.find((x) => x.id === id) || {}).name + "」？")) vm.remove(id);
-          } else if (action === "start") vm.startExecution(id);
+          } else if (action === "start") {
+            const symbols = prompt("请输入执行标的（逗号分隔），如：600036, 000001");
+            if (symbols && symbols.trim()) vm.startExecution(id, symbols.trim());
+          }
           else if (action === "stop") vm.stopExecution(id);
           else if (action === "cancel") vm.cancelEdit();
           else if (action === "save") vm.save(collectForm());
@@ -144,5 +137,4 @@
     vm.subscribe(paint);
   }
 
-  window.StrategyView = { render };
-})();
+  export { render };

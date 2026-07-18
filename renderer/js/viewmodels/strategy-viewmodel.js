@@ -46,6 +46,7 @@ class StrategyViewModel {
   async loadExecutorStatus() {
     try {
       if (!this.facade.executor) return;
+      if (this.state.editing) return;  // 编辑中不打扰用户，避免 DOM 重建丢失输入
       const resp = await this.facade.executor.list();
       if (resp.ok && resp.data) {
         const map = {};
@@ -55,9 +56,9 @@ class StrategyViewModel {
     } catch {}
   }
 
-  async startExecution(id) {
+  async startExecution(id, symbols) {
     try {
-      const resp = await this.facade.executor.start(id);
+      const resp = await this.facade.executor.start(id, symbols);
       if (!resp.ok) { this._set({ error: resp.error }); return; }
       await this.loadExecutorStatus();
     } catch (e) {
@@ -82,7 +83,6 @@ class StrategyViewModel {
         name: "",
         description: "",
         type: "ma_cross",
-        symbols: "",
         params: JSON.stringify({ fast: 5, slow: 20 }, null, 2),
         risk: JSON.stringify({ stopLoss: 0.05, stopProfit: 0.15, maxOrderAmount: 500000, maxDailyTrades: 10, maxPositionRatio: 0.3 }, null, 2),
         status: "draft",
@@ -98,7 +98,6 @@ class StrategyViewModel {
         name: strategy.name,
         description: strategy.description || "",
         type: strategy.type,
-        symbols: (strategy.symbols || []).join(", "),
         params: JSON.stringify(strategy.params || {}, null, 2),
         risk: JSON.stringify(strategy.risk || {}, null, 2),
         status: strategy.status,
@@ -112,7 +111,6 @@ class StrategyViewModel {
   }
 
   async save(form) {
-    const symbols = form.symbols.split(",").map((s) => s.trim()).filter(Boolean);
     let params, risk;
     try {
       params = JSON.parse(form.params || "{}");
@@ -130,7 +128,6 @@ class StrategyViewModel {
       name: form.name.trim(),
       description: form.description.trim(),
       type: form.type,
-      symbols,
       params,
       risk,
       status: form.status,
@@ -160,4 +157,4 @@ class StrategyViewModel {
   }
 }
 
-window.StrategyViewModel = StrategyViewModel;
+export { StrategyViewModel };

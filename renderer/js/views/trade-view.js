@@ -1,10 +1,6 @@
-/**
- * mookquant · Trade View
- *
- * 交易界面：下单面板 + 账户摘要 + 持仓/委托列表。
- */
-(function () {
-  function escapeHtml(s) {
+import * as StockSearch from './stock-search.js';
+
+function escapeHtml(s) {
     return String(s == null ? "" : s).replace(/[&<>"'\/]/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "/": "&#x2F;",
     }[c]));
@@ -24,14 +20,13 @@
   function renderOrderForm(state, vm) {
     const f = state.orderForm;
     return `
-      <div class="card">
+      <div class="card" style="position:relative;z-index:10">
         <div class="card-title">下单</div>
         ${state.error ? '<div class="status error" style="margin-bottom:16px">' + escapeHtml(state.error) + "</div>" : ""}
         <div class="form-row">
           <div class="form-group" style="flex:2">
             <label class="form-label">股票代码</label>
             <input class="input-field" id="td_symbol" value="${escapeHtml(f.symbol)}" placeholder="输入代码/名称/拼音，如：sh600519 / 茅台 / zs" autocomplete="off" />
-            <div class="suggestions" id="td_suggestions" hidden style="top:100%"></div>
           </div>
           <div class="form-group">
             <label class="form-label">方向</label>
@@ -132,6 +127,7 @@
   }
 
   function render(root, vm) {
+    var searchCtrl = null;
     function paint(state) {
       root.innerHTML =
         renderOrderForm(state, vm) +
@@ -167,87 +163,19 @@
         el.addEventListener("click", () => vm.cancelOrder(el.dataset.cancel));
       });
 
-      // 股票代码搜索候选
-      var suggBox = root.querySelector("#td_suggestions");
-      var suggTimer = null;
-      var suggList = [];
-      var suggIdx = -1;
+      // 股票代码搜索候选 (reuses StockSearch component, self-contained)
       var symbolInput = root.querySelector("#td_symbol");
-
-      function showSugg(items) {
-        suggList = items;
-        suggIdx = -1;
-        if (!items.length) { if (suggBox) suggBox.hidden = true; return; }
-        if (suggBox) {
-          suggBox.innerHTML = items.map(function(s, i) {
-            return '<div class="suggestion-item" data-sugg-idx="' + i + '">' +
-              '<span class="sugg-code">' + escapeHtml(s.code) + '</span>' +
-              '<span class="sugg-name">' + escapeHtml(s.name) + '</span>' +
-              '<span class="sugg-industry">' + escapeHtml(s.industry || "") + '</span></div>';
-          }).join("");
-          suggBox.hidden = false;
-          suggBox.querySelectorAll(".suggestion-item").forEach(function(el) {
-            el.addEventListener("click", function() {
-              var idx = parseInt(el.dataset.suggIdx);
-              if (suggList[idx] && symbolInput) {
-                symbolInput.value = suggList[idx].code;
-                vm.setOrderField("symbol", suggList[idx].code);
-                suggBox.hidden = true;
-              }
-            });
-          });
-        }
-      }
-
       if (symbolInput) {
-        symbolInput.addEventListener("input", function() {
-          vm.setOrderField("symbol", symbolInput.value);
-          var val = symbolInput.value.trim();
-          if (suggTimer) clearTimeout(suggTimer);
-          if (!val || val.length < 1) { if (suggBox) suggBox.hidden = true; return; }
-          suggTimer = setTimeout(async function() {
-            try {
-              var resp = await vm.facade.quote.search(val);
-              if (resp.ok && resp.data && resp.data.length > 0) showSugg(resp.data);
-              else if (suggBox) suggBox.hidden = true;
-            } catch (e) { if (suggBox) suggBox.hidden = true; }
-          }, 200);
-        });
-
-        symbolInput.addEventListener("keydown", function(e) {
-          if (e.key === "ArrowDown" && suggList.length) {
-            e.preventDefault();
-            suggIdx = Math.min(suggIdx + 1, suggList.length - 1);
-            updateSuggHighlight();
-          } else if (e.key === "ArrowUp" && suggList.length) {
-            e.preventDefault();
-            suggIdx = Math.max(suggIdx - 1, -1);
-            updateSuggHighlight();
-          } else if (e.key === "Enter" && suggIdx >= 0 && suggList[suggIdx]) {
-            e.preventDefault();
-            symbolInput.value = suggList[suggIdx].code;
-            vm.setOrderField("symbol", suggList[suggIdx].code);
-            if (suggBox) suggBox.hidden = true;
-          } else if (e.key === "Escape") {
-            if (suggBox) suggBox.hidden = true;
-          }
+        if (searchCtrl) searchCtrl.destroy();
+        searchCtrl = StockSearch.mount(symbolInput, vm.facade, function (stock) {
+          vm.setOrderField("symbol", stock.code);
+        }, function (val) {
+          vm.setOrderField("symbol", val);
         });
       }
-
-      function updateSuggHighlight() {
-        if (!suggBox) return;
-        suggBox.querySelectorAll(".suggestion-item").forEach(function(el, i) {
-          el.classList.toggle("active", i === suggIdx);
-        });
-      }
-
-      document.addEventListener("click", function(e) {
-        if (!root.contains(e.target) && suggBox) suggBox.hidden = true;
-      });
     }
 
     vm.subscribe(paint);
   }
 
-  window.TradeView = { render };
-})();
+  export { render };

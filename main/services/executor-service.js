@@ -20,8 +20,9 @@ function log(msg) {
 }
 
 class StrategyExecutor {
-  constructor({ strategy, quoteService, tradeService, strategyService }) {
+  constructor({ strategy, symbols, quoteService, tradeService, strategyService }) {
     this.strategy = strategy;
+    this.symbols = symbols || [];
     this.quoteService = quoteService;
     this.tradeService = tradeService;
     this.strategyService = strategyService;
@@ -63,7 +64,7 @@ class StrategyExecutor {
     this._lastTick = new Date().toISOString();
 
     try {
-      const symbol = this.strategy.symbols[0];
+      const symbol = this.symbols[0];
       if (!symbol) {
         this._error = "策略未配置标的";
         return;
@@ -275,7 +276,7 @@ class StrategyExecutor {
       strategyId: this.strategy.id,
       strategyName: this.strategy.name,
       type: this.strategy.type,
-      symbols: this.strategy.symbols,
+      symbols: this.symbols,
       status: this.status,
       lastTick: this._lastTick,
       lastSignal: this._lastSignal,
@@ -297,7 +298,7 @@ class ExecutorService {
     this._executors = new Map();
   }
 
-  async start(strategyId) {
+  async start(strategyId, symbols) {
     if (this._executors.has(strategyId)) {
       return { ok: true, data: this._executors.get(strategyId).getStatus() };
     }
@@ -307,12 +308,13 @@ class ExecutorService {
       return { ok: false, error: "策略不存在: " + strategyId };
     }
 
-    if (!strategy.symbols || strategy.symbols.length === 0) {
-      return { ok: false, error: "策略未配置标的" };
+    if (!symbols || !symbols.length) {
+      return { ok: false, error: "请先指定执行标的" };
     }
 
     const executor = new StrategyExecutor({
       strategy,
+      symbols,
       quoteService: this.quoteService,
       tradeService: this.tradeService,
       strategyService: this.strategyService,
