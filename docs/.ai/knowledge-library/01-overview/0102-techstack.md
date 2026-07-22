@@ -13,6 +13,7 @@
 | 行情 SDK | xtquant（迅投） | 由用户安装 | 国金 QMT miniQMT 实盘数据 |
 | 语言 | Node.js | ≥18 | 主进程 |
 | 语言 | Python | ≥3.9 | 子进程桥（xtquant 调用层） |
+| 深度学习 | PyTorch | ≥2.0 | 模型训练与推理（可选依赖） |
 
 > **原则**：能少则少。尽量复用成熟三方库，自写代码只解决"三方解决不了的部分"。
 
@@ -48,7 +49,7 @@
 | 样式 | 纯 CSS + CSS 变量；构建后单文件 |
 | 入口 | `renderer/js/main.js`，被 `index.html` 通过 `<script type="module">` 加载 |
 | 状态管理 | 自写极简 MVVM（ViewModel 持 state + `subscribe(fn)` 派发） |
-| 路由 | 自写 hash 路由（`renderer/js/router.js`），5 个页面 |
+| 路由 | 自写 hash 路由（`renderer/js/router.js`），6 个页面 |
 | 跨端兼容 | Facade 双模式：Electron 走 `window.mookquant.facade`；纯浏览器走内置 mock，方便 UI 调试 |
 
 ### 为什么不上 Vue / React？
@@ -127,7 +128,7 @@ manualChunks(id) {
 | 进程管理 | 主进程持有子进程句柄；启动失败/退出 → 日志告警 + 自动重启 |
 | 已实现 | `ping`、`quote.snapshot`（快照）、`quote.history`（K 线）、`quote.full`（批量） |
 | 待补全 | 实盘交易方法（`trade.connect/order/cancel/positions/orders/account`） |
-| 辅助 | `bridge/backtest_engine.py`（回测调度）、`bridge/db.py`（本地行情缓存库） |
+| 辅助 | `bridge/backtest_engine.py`（回测调度）、`bridge/db.py`（本地行情缓存库）、`bridge/model_server.py`（HTTP 模型服务）、`bridge/qmt_shell.py`（QMT 壳策略） |
 
 `.env` 关键变量：
 

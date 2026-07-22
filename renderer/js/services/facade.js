@@ -90,8 +90,17 @@ if (window.mookquant && window.mookquant.facade) { return window.mookquant.facad
   // Mock strategy
   const _ST_KEY = "mookquant_strategies";
   let _strats = JSON.parse(localStorage.getItem(_ST_KEY) || "[]"); let _stSeq = 0;
+  const _strategyTypes = [
+    { name: "ma_cross", display_name: "双均线交叉", description: "快线上穿慢线买入，下穿卖出", version: "1.0", trigger_mode: "bar", params_schema: [{ key: "fast", type: "int", default: 5, min: 1, max: 60, label: "快线周期" }, { key: "slow", type: "int", default: 20, min: 2, max: 250, label: "慢线周期" }] },
+    { name: "momentum", display_name: "动量策略", description: "动量突破", version: "1.0", trigger_mode: "bar", params_schema: [{ key: "period", type: "int", default: 20, min: 1, max: 120, label: "周期" }, { key: "threshold", type: "float", default: 0.02, min: 0, max: 1, label: "阈值" }] },
+    { name: "mean_reversion", display_name: "均值回归", description: "偏离均值回归", version: "1.0", trigger_mode: "bar", params_schema: [{ key: "period", type: "int", default: 20, min: 1, max: 120, label: "周期" }, { key: "deviation", type: "float", default: 2.0, min: 0.1, max: 5, label: "偏离倍数" }] },
+  ];
   const strategyMock = {
     list: async () => ({ ok: true, data: _strats }),
+    types: async () => ({ ok: true, data: _strategyTypes }),
+    export: async () => ({ ok: false, error: "浏览器模式不支持策略导出" }),
+    addType: async () => ({ ok: false, error: "浏览器模式不支持添加策略" }),
+    deleteType: async () => ({ ok: false, error: "浏览器模式不支持删除策略" }),
     get: async (id) => ({ ok: true, data: _strats.find(s => s.id === id) }),
     create: async (p) => { const now = new Date().toISOString(); const s = { ...p, id: "st_" + (++_stSeq) + "_" + Date.now().toString(36), createdAt: now, updatedAt: now }; _strats.unshift(s); localStorage.setItem(_ST_KEY, JSON.stringify(_strats)); return { ok: true, data: s }; },
     update: async (id, payload) => { const i = _strats.findIndex(s => s.id === id); if (i < 0) return { ok: false, error: "not found" }; _strats[i] = { ..._strats[i], ...payload, updatedAt: new Date().toISOString() }; localStorage.setItem(_ST_KEY, JSON.stringify(_strats)); return { ok: true, data: _strats[i] }; },
@@ -168,7 +177,20 @@ if (window.mookquant && window.mookquant.facade) { return window.mookquant.facad
     quote: { query: mockQuery, info: async () => ({ mode: "mock", description: "前端 mock" }), history: async (s, p, c, dt) => mockHistory(s, p, c),
       search: async (q) => ({ ok: true, data: searchStocks(q) }), status: async () => ({ mode: "mock", description: "mock", connected: false }) },
     strategy: strategyMock, backtest: backtestMock, trade: tradeMock, settings: settingsMock,
-    app: { info: async () => ({ name: "mookquant", version: "0.2.0", platform: "browser" }), restart: async () => { location.reload(); } },
+    modelServer: {
+    status: async () => ({ ok: false, data: { ready: false, port: 8765 } }),
+    listStrategies: async () => ({ ok: true, data: [] }),
+    getStrategy: async () => ({ ok: true, data: {} }),
+    addStrategy: async () => ({ ok: true, data: {} }),
+    deleteStrategy: async () => ({ ok: true, data: {} }),
+    listModels: async () => ({ ok: true, data: [] }),
+    getModel: async () => ({ ok: true, data: {} }),
+    deleteModel: async () => ({ ok: true, data: {} }),
+    startTraining: async () => ({ ok: true, data: { task_id: "mock" } }),
+    getTrainingStatus: async () => ({ ok: true, data: { status: "done", progress: 100 } }),
+    computeSignal: async () => ({ ok: true, data: { action: "hold" } }),
+  },
+  app: { info: async () => ({ name: "mookquant", version: "0.2.0", platform: "browser" }), restart: async () => { location.reload(); } },
     executor: executorMock,
     logs: logsMock,
   };

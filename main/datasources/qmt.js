@@ -253,6 +253,22 @@ class QmtDataSource {
     return await this._request("strategy.export", { type, platform: platform || "qmt", params });
   }
 
+  /**
+   * 添加用户自定义策略（写源码到 user/ 目录并即时注册）
+   */
+  async strategyAdd({ name, code }) {
+    if (!this._ready) await this.init();
+    return await this._request("strategy.add", { name, code });
+  }
+
+  /**
+   * 删除用户策略（仅限 user/ 目录下的）
+   */
+  async strategyDelete({ name }) {
+    if (!this._ready) await this.init();
+    return await this._request("strategy.delete", { name });
+  }
+
   onExit(fn) {
     this._exitHandlers.push(fn);
   }

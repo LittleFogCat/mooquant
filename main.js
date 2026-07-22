@@ -30,6 +30,7 @@ const { BacktestService } = require("./main/services/backtest-service");
 const { TradeService } = require("./main/services/trade-service");
 const { ConfigManager } = require("./main/services/config-manager");
 const { ExecutorService } = require("./main/services/executor-service");
+const { ModelService } = require("./main/services/model-service");
 const { createDataSource } = require("./main/datasources");
 const { createTradeDataSource } = require("./main/datasources/trade");
 
@@ -37,6 +38,7 @@ let mainWindow = null;
 let quoteService = null, strategyService = null, backtestService = null, tradeService = null;
 let configManager = null;
 let executorService = null;
+let modelService = null;
 
 function installCspHeader() {
   const csp = [
@@ -131,6 +133,20 @@ app.whenReady().then(async () => {
       }
     });
   }
+  // 策略 bridge：优先复用行情数据源；mock 模式下独立创建（策略 RPC 不依赖 miniQMT）
+  let strategyBridge = dataSource;
+  if (!dataSource || dataSource.mode !== "qmt" || typeof dataSource.strategyList !== "function") {
+    try {
+      const { QmtDataSource } = require("./main/datasources/qmt");
+      strategyBridge = new QmtDataSource(config.qmt || {});
+      await strategyBridge.init();
+      console.log("[main] 策略 bridge 已启动（独立模式）");
+    } catch (e) {
+      console.warn("[main] 策略 bridge 启动失败，策略功能将不可用:", e.message);
+      strategyBridge = null;
+    }
+  }
+
   quoteService = new QuoteService({ source: dataSource, cacheTtlMs: config.cache?.ttlMs ?? 5000 });
 
   // 预加载股票列表 + 后台同步（不阻塞启动）
@@ -152,10 +168,21 @@ app.whenReady().then(async () => {
   tradeService = new TradeService({ source: tradeSource });
 
   updateSplash(splash, "恢复策略执行...", 75);
-  executorService = new ExecutorService({ strategyService, quoteService, tradeService, dataSource });
+  executorService = new ExecutorService({ strategyService, quoteService, tradeService, strategyBridge });
   executorService.restoreRunning();
 
-  registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService });
+  // 启动模型服务（HTTP 子进程）
+  updateSplash(splash, "启动模型服务...", 85);
+  modelService = new ModelService({ port: (config.modelServer || {}).port || 8765 });
+  try {
+    await modelService.init();
+    console.log("[main] 模型服务已启动 port=" + modelService.port);
+  } catch (e) {
+    console.warn("[main] 模型服务启动失败:", e.message);
+    modelService = null;
+  }
+
+  registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, strategyBridge, modelService });
 
   updateSplash(splash, "启动完成", 100);
   console.log("[main] 数据源初始化完成，IPC 已注册");
@@ -173,5 +200,6 @@ app.on("window-all-closed", () => {
   if (backtestService) backtestService.dispose();
   if (tradeService) tradeService.dispose();
   if (executorService) executorService.dispose();
+  if (modelService) modelService.dispose();
   if (process.platform !== "darwin") app.quit();
 });

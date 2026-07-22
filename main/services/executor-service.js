@@ -15,13 +15,13 @@ function log(msg) {
 }
 
 class StrategyExecutor {
-  constructor({ strategy, symbols, quoteService, tradeService, strategyService, dataSource }) {
+  constructor({ strategy, symbols, quoteService, tradeService, strategyService, strategyBridge }) {
     this.strategy = strategy;
     this.symbols = symbols || [];
     this.quoteService = quoteService;
     this.tradeService = tradeService;
     this.strategyService = strategyService;
-    this.dataSource = dataSource;
+    this.strategyBridge = strategyBridge;
     this._log = new LogService();
     this._timer = null;
     this.status = "stopped";
@@ -90,13 +90,13 @@ class StrategyExecutor {
       }
 
       // 2. 计算信号（通过 Python 桥 RPC，回测与实盘共用同一逻辑）
-      if (!this.dataSource || !this.dataSource.strategySignal) {
+      if (!this.strategyBridge || !this.strategyBridge.strategySignal) {
         this._error = "数据源不支持策略信号计算";
         return;
       }
       let signal;
       try {
-        signal = await this.dataSource.strategySignal({
+        signal = await this.strategyBridge.strategySignal({
           type: this.strategy.type,
           bars,
           params: this.strategy.params || {},
@@ -278,7 +278,7 @@ class StrategyExecutor {
 
   async _updateStatus(status) {
     try {
-      await this.strategyService.update(this.strategy.id, { status });
+      await this.strategyService.update(this.strategy.id, { status, symbols: this.symbols });
     } catch (e) {
       log("更新策略状态失败: " + e.message);
     }
@@ -304,10 +304,11 @@ class StrategyExecutor {
 }
 
 class ExecutorService {
-  constructor({ strategyService, quoteService, tradeService }) {
+  constructor({ strategyService, quoteService, tradeService, strategyBridge }) {
     this.strategyService = strategyService;
     this.quoteService = quoteService;
     this.tradeService = tradeService;
+    this.strategyBridge = strategyBridge;
     this._executors = new Map();
   }
 
@@ -321,6 +322,10 @@ class ExecutorService {
       return { ok: false, error: "策略不存在: " + strategyId };
     }
 
+    // normalize symbols: accept "600036,000001" string or array
+    if (typeof symbols === "string") {
+      symbols = symbols.split(",").map((s) => s.trim()).filter(Boolean);
+    }
     if (!symbols || !symbols.length) {
       return { ok: false, error: "请先指定执行标的" };
     }
@@ -331,6 +336,7 @@ class ExecutorService {
       quoteService: this.quoteService,
       tradeService: this.tradeService,
       strategyService: this.strategyService,
+      strategyBridge: this.strategyBridge,
     });
     executor.start();
     this._executors.set(strategyId, executor);
@@ -369,7 +375,7 @@ class ExecutorService {
       const running = strategies.filter((s) => s.status === "running");
       for (const s of running) {
         log("恢复策略: " + s.name + " (" + s.id + ")");
-        await this.start(s.id);
+        await this.start(s.id, s.symbols);
       }
       if (running.length > 0) {
         log("已恢复 " + running.length + " 个策略");

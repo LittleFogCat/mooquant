@@ -1,13 +1,18 @@
-# 迅投 QMT Python 桥依赖
+# mooquant Python bridge dependencies
 #
-# 安装：
+# Install:
 #   pip install -r requirements.txt
 #
-# 真实接入：
-#   xtquant 由国金证券通过 miniQMT 客户端分发，
-#   一般通过国金交易客户端的安装目录下的 site-packages 引入，
-#   或者：
-#   pip install xtquant
-#
-# 安装好后请解除 bridge/qmt_server.py 中的 TODO 并填入真实数据来源
+# xtquant is distributed by QMT client, or: pip install xtquant
 xtquant>=1.0
+
+# PyTorch is OPTIONAL. Only needed for ML strategies and training.
+# Without torch, rule-based strategies work normally.
+# Install: pip install torch
+torch>=2.0
+
+# numpy is required by indicators and features
+numpy>=1.20
+
+# pytest for unit tests
+pytest>=7.0

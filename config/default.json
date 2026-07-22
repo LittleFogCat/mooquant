@@ -17,5 +17,8 @@
     "minHeight": 540,
     "titleBarStyle": "hiddenInset"
   },
-  "tradeSource": "mock"
+  "tradeSource": "mock",
+  "modelServer": {
+    "port": 8765
+  }
 }

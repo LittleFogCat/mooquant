@@ -18,6 +18,7 @@ class BacktestViewModel {
       commission: saved.commission !== undefined ? saved.commission : 0.0003,
       slippage: saved.slippage !== undefined ? saved.slippage : 0.001,
       dividendType: saved.dividendType || "front",
+    period: saved.period || "1d",
       running: false,
       result: null,
       error: null,
@@ -42,6 +43,7 @@ class BacktestViewModel {
         commission: s.commission,
         slippage: s.slippage,
         dividendType: s.dividendType,
+    period: s.period,
       }));
     } catch (e) {}
   }
@@ -100,6 +102,7 @@ class BacktestViewModel {
         commission: Number(s.commission),
         slippage: Number(s.slippage),
         dividendType: s.dividendType || "front",
+        period: s.period || "1d",
       });
       if (!resp.ok) { this._set({ running: false, error: resp.error }); return; }
       this._set({ running: false, result: resp.data });

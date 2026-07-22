@@ -14,6 +14,7 @@ import { StrategyViewModel } from './viewmodels/strategy-viewmodel.js';
 import { BacktestViewModel } from './viewmodels/backtest-viewmodel.js';
 import { TradeViewModel } from './viewmodels/trade-viewmodel.js';
 import { SettingsViewModel } from './viewmodels/settings-viewmodel.js';
+import { ModelViewModel } from './viewmodels/model-viewmodel.js';
 
 import * as SearchPanelView from './views/search-panel.js';
 import * as ResultCardView from './views/result-card.js';
@@ -24,6 +25,7 @@ import * as StrategyView from './views/strategy-view.js';
 import * as BacktestView from './views/backtest-view.js';
 import * as TradeView from './views/trade-view.js';
 import * as SettingsView from './views/settings-view.js';
+import * as ModelView from './views/model-view.js';
 
 // ---- 错误隔离包装 ----
 function safe(name, fn) {
@@ -130,6 +132,14 @@ safe('QMT状态', () => {
   }
   pollQmtStatus();
   setInterval(pollQmtStatus, 5000);
+});
+
+// ---- 模型页 ----
+safe('模型页', () => {
+  const modelVM = new ModelViewModel(facade);
+  ModelView.render(document.getElementById("modelContainer"), modelVM);
+  Router.onEnter("models", () => modelVM.loadAll());
+  Router.onLeave("models", () => modelVM.stopPolling());
 });
 
 // ---- 路由初始化（始终执行，不受上面错误影响）----

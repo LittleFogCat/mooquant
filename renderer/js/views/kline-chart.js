@@ -149,7 +149,7 @@ import * as echarts from 'echarts';
       if (cbTrades) {
         cbTrades.onchange = function () {
           state.showTrades = cbTrades.checked;
-          _toggleTrades(chart, state.showTrades, state._buyDots, state._sellDots, state._buyLabels, state._sellLabels, state._markLineData);
+          _toggleTrades(chart, state.showTrades, state._buyDots, state._sellDots, state._buyLabels, state._sellLabels, state._tLabels, state._markLineData);
         };
       }
       var selDiv = settingsPanel.querySelector(".kline-sel-dividend");
@@ -204,38 +204,57 @@ import * as echarts from 'echarts';
       // Update info
       infoEl.textContent = bars.length + " 根" + (useLineChart ? "（折线图模式）" : "");
 
-      // ---- B/S markers (only in candlestick mode) ----
-      var buyDots = [], sellDots = [], buyLabels = [], sellLabels = [], markLineData = [];
+      // ---- B/S/T markers (only in candlestick mode) ----
+      // T = a single bar contains both buy and sell trades (orange label)
+      var buyDots = [], sellDots = [], buyLabels = [], sellLabels = [], tLabels = [], markLineData = [];
       var trades = state.trades || [];
       var showLine = !useLineChart && (opts.showLabel != null ? opts.showLabel : bars.length <= 60);
       if (!useLineChart && trades.length) {
         var barMap = {};
         bars.forEach(function (b, i) { barMap[toDate(b)] = i; });
+        // group trades by date to detect bars with both buy & sell
+        var byDate = {};
         trades.forEach(function (t) {
-          var idx = barMap[t.date];
+          var d = t.date;
+          if (!byDate[d]) byDate[d] = [];
+          byDate[d].push(t);
+        });
+        Object.keys(byDate).forEach(function (d) {
+          var idx = barMap[d];
           if (idx == null) return;
           var bar = bars[idx];
           var lo = Number(bar.low), hi = Number(bar.high);
-          var price = Number(t.price);
-          var offset = Math.max((hi - lo) * 0.5, price * 0.012);
-          var info = { side: t.side, price: t.price, quantity: t.quantity, amount: t.amount, pnl: t.pnl };
-          if (t.side === "buy") {
-            var labelY = lo - offset;
-            buyDots.push({ value: [t.date, price], info: info });
-            buyLabels.push({ value: [t.date, labelY] });
-            if (showLine) markLineData.push([{ coord: [t.date, price], itemStyle: { color: "#ef4444" } }, { coord: [t.date, labelY], itemStyle: { color: "#ef4444" } }]);
+          var ts = byDate[d];
+          var hasBuy = ts.some(function (t) { return t.side === "buy"; });
+          var hasSell = ts.some(function (t) { return t.side === "sell"; });
+          var both = hasBuy && hasSell;
+          var labelColor = both ? "#f59e0b" : (hasBuy ? "#ef4444" : "#3b82f6");
+          // label below low for buy/both, above high for sell-only
+          var offset = Math.max((hi - lo) * 0.5, lo * 0.012);
+          var labelY = (hasSell && !hasBuy) ? hi + offset : lo - offset;
+          ts.forEach(function (t) {
+            var price = Number(t.price);
+            var info = { side: t.side, price: t.price, quantity: t.quantity, amount: t.amount, pnl: t.pnl, both: both };
+            if (t.side === "buy") {
+              buyDots.push({ value: [d, price], info: info });
+            } else {
+              sellDots.push({ value: [d, price], info: info });
+            }
+            markLineData.push([{ coord: [d, labelY], itemStyle: { color: labelColor } }, { coord: [d, price], itemStyle: { color: labelColor } }]);
+          });
+          if (both) {
+            tLabels.push({ value: [d, labelY] });
+          } else if (hasBuy) {
+            buyLabels.push({ value: [d, labelY] });
           } else {
-            var labelY2 = hi + offset;
-            sellDots.push({ value: [t.date, price], info: info });
-            sellLabels.push({ value: [t.date, labelY2] });
-            if (showLine) markLineData.push([{ coord: [t.date, price], itemStyle: { color: "#3b82f6" } }, { coord: [t.date, labelY2], itemStyle: { color: "#3b82f6" } }]);
+            sellLabels.push({ value: [d, labelY] });
           }
         });
       }
       // Store for toggleTrades
       state._buyDots = buyDots; state._sellDots = sellDots;
       state._buyLabels = buyLabels; state._sellLabels = sellLabels;
-      state._markLineData = markLineData;
+      state._tLabels = tLabels; state._markLineData = markLineData;
 
       var showTrades = state.showTrades && !useLineChart && trades.length > 0;
 
@@ -251,7 +270,7 @@ import * as echarts from 'echarts';
       } else {
         // 蜡烛图模式
         series.push({
-          name: "K线", type: "candlestick", data: ohlc, barGap: "30%", barCategoryGap: "20%",
+          name: "K线", type: "candlestick", data: ohlc,
           itemStyle: {
             color: "transparent", color0: "#22c55e",
             borderColor: "#ef4444", borderColor0: "#22c55e",
@@ -261,24 +280,30 @@ import * as echarts from 'echarts';
         });
         // B dots
         series.push({
-          name: "B", type: "scatter", data: showTrades ? buyDots : [], symbol: "circle", symbolSize: 5,
+          name: "B", type: "scatter", data: showTrades ? buyDots : [], symbol: "circle", symbolSize: 6,
           itemStyle: { color: "#ef4444" }, z: 10,
         });
         // S dots
         series.push({
-          name: "S", type: "scatter", data: showTrades ? sellDots : [], symbol: "circle", symbolSize: 5,
+          name: "S", type: "scatter", data: showTrades ? sellDots : [], symbol: "circle", symbolSize: 6,
           itemStyle: { color: "#3b82f6" }, z: 10,
         });
         // B labels
         series.push({
           name: "B标签", type: "scatter", data: showTrades ? buyLabels : [], symbol: "circle", symbolSize: 0,
-          label: { show: true, formatter: "B", color: "#fff", backgroundColor: "#ef4444", borderRadius: 3, padding: [1, 3], fontSize: 9 },
+          label: { show: true, formatter: "B", color: "#fff", backgroundColor: "#ef4444", borderRadius: 3, padding: [1, 3], fontSize: 9, offset: [0, 14] },
           z: 11, silent: true,
         });
         // S labels
         series.push({
           name: "S标签", type: "scatter", data: showTrades ? sellLabels : [], symbol: "circle", symbolSize: 0,
-          label: { show: true, formatter: "S", color: "#fff", backgroundColor: "#3b82f6", borderRadius: 3, padding: [1, 3], fontSize: 9 },
+          label: { show: true, formatter: "S", color: "#fff", backgroundColor: "#3b82f6", borderRadius: 3, padding: [1, 3], fontSize: 9, offset: [0, -14] },
+          z: 11, silent: true,
+        });
+        // T labels (buy + sell on the same bar)
+        series.push({
+          name: "T标签", type: "scatter", data: showTrades ? tLabels : [], symbol: "circle", symbolSize: 0,
+          label: { show: true, formatter: "T", color: "#fff", backgroundColor: "#f59e0b", borderRadius: 3, padding: [1, 3], fontSize: 9, offset: [0, 14] },
           z: 11, silent: true,
         });
       }
@@ -337,9 +362,10 @@ import * as echarts from 'echarts';
               candleDone = true;
             } else if (p.seriesType === "scatter" && p.data != null && p.data.info) {
               var info = p.data.info;
-              var label = info.side === "buy" ? "买入" : "卖出";
-              var c = info.side === "buy" ? "#ef4444" : "#3b82f6";
-              lines.push('<span style="color:' + c + '">' + label + ": " + fmtNum(info.price) + " 股  数量: " + info.quantity + "  金额: " + fmtNum(info.amount, 0) + "</span>");
+              var isBuy = info.side === "buy";
+              var label = isBuy ? "买入" : "卖出";
+              var c = isBuy ? "#ef4444" : "#3b82f6";
+              lines.push('<span style="color:' + c + '">' + label + ": " + fmtNum(info.price) + "  股数: " + info.quantity + "</span>");
               if (info.pnl != null) lines.push('<span style="color:' + c + '">盈亏: ' + fmtNum(info.pnl) + "</span>");
             }
           }
@@ -426,7 +452,7 @@ import * as echarts from 'echarts';
     if (stale) { try { stale.dispose(); } catch (e) {} }
   }
 
-  function _toggleTrades(chart, show, buyDots, sellDots, buyLabels, sellLabels, markLineData) {
+  function _toggleTrades(chart, show, buyDots, sellDots, buyLabels, sellLabels, tLabels, markLineData) {
     if (!chart) return;
     chart.setOption({
       series: [
@@ -434,7 +460,8 @@ import * as echarts from 'echarts';
         { name: "B", data: show ? buyDots : [] },
         { name: "S", data: show ? sellDots : [] },
         { name: "B标签", data: show ? buyLabels : [] },
-        { name: "S标签", data: show ? sellLabels : [] }
+        { name: "S标签", data: show ? sellLabels : [] },
+        { name: "T标签", data: show ? tLabels : [] }
       ]
     });
   }

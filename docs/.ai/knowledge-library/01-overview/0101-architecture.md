@@ -30,7 +30,7 @@ mookquant 是一款基于 **Electron** 的量化投资桌面应用，采用 **MV
 │                 ▼                                                        │
 │  ┌──────────────┬──────────────┬──────────────┬──────────────────┐     │
 │  │ QuoteService │StrategySvc   │BacktestSvc   │ TradeService     │     │
-│  │ ExecutorSvc  │ConfigMgr     │LogService    │                  │     │
+│  │ ExecutorSvc  │ModelSvc  │ConfigMgr     │LogService    │                  │     │
 │  └──┬───────────┴──────┬───────┴──────┬───────┴────┬─────────────┘     │
 │     ▼                  ▼              ▼             ▼                    │
 │  ┌──────────────────┐ ┌─────────────┐ ┌──────────────────┐              │
@@ -170,6 +170,7 @@ class DataSource {
    ├─ 创建 QuoteService（含股票列表预加载 + QMT 后台同步）
    ├─ createTradeDataSource(...) + TradeService
    ├─ BacktestService + ExecutorService.restoreRunning()   // 恢复上次运行的策略
+   ├─ ModelService.init()                                   // 启动模型服务（HTTP 子进程）
    ├─ registerIpc(...)                                     // 注册全部 IPC 路由
    └─ 关闭 splash，创建主窗口
 3. mainWindow.once("ready-to-show") → maximize + show
@@ -211,7 +212,11 @@ mooquant/
 │   ├── qmt_server.py        # stdio JSON-RPC
 │   ├── backtest_engine.py
 │   ├── db.py
-│   └── requirements.txt
+│   ├── model_server.py      # HTTP 模型服务
+   ├── qmt_shell.py         # QMT 壳策略模板
+   ├── strategies/          # 策略框架（含 ML）
+   ├── training/            # 训练管道
+   └── requirements.txt
 ├── renderer/                # 渲染层（vite 构建）
 │   ├── index.html
 │   ├── splash.html

@@ -14,6 +14,8 @@ class StrategyViewModel {
       exportedName: null,
       loading: false,
       editing: null,
+      startingId: null,
+      startingSymbols: "",
       error: null,
     };
     this._subs = [];
@@ -74,7 +76,7 @@ class StrategyViewModel {
   async loadExecutorStatus() {
     try {
       if (!this.facade.executor) return;
-      if (this.state.editing) return;  // 编辑中不打扰用户，避免 DOM 重建丢失输入
+      if (this.state.editing || this.state.startingId) return;  // 编辑/启动弹窗中不打扰用户，避免 DOM 重建丢失输入
       const resp = await this.facade.executor.list();
       if (resp.ok && resp.data) {
         const map = {};
@@ -84,7 +86,17 @@ class StrategyViewModel {
     } catch {}
   }
 
+  startStart(id) {
+    const s = this.state.list.find((x) => x.id === id);
+    const symbols = (s && Array.isArray(s.symbols) && s.symbols.length)
+      ? s.symbols.join(", ")
+      : "";
+    this._set({ startingId: id, startingSymbols: symbols, error: null });
+  }
+  cancelStart() { this._set({ startingId: null, startingSymbols: "" }); }
+
   async startExecution(id, symbols) {
+    this._set({ startingId: null, startingSymbols: "" });
     try {
       const resp = await this.facade.executor.start(id, symbols);
       if (!resp.ok) { this._set({ error: resp.error }); return; }
@@ -118,9 +130,29 @@ class StrategyViewModel {
         params: JSON.stringify(defaultParams, null, 2),
         risk: JSON.stringify({ stopLoss: 0.05, stopProfit: 0.15, maxOrderAmount: 500000, maxDailyTrades: 10, maxPositionRatio: 0.3 }, null, 2),
         status: "draft",
+        customMode: false,
+        customName: "",
+        customDisplayName: "",
+        customCode: "",
       },
       error: null,
     });
+  }
+
+  /** 切换「自定义策略」编辑模式 */
+  setCustomMode(isCustom) {
+    if (!this.state.editing) return;
+    this._set({ editing: { ...this.state.editing, customMode: isCustom } });
+  }
+
+  /** 类型选择变化：更新参数默认值 / 切换自定义模式 */
+  onTypeChange(typeName) {
+    if (!this.state.editing) return;
+    if (typeName === "__custom__") { this.setCustomMode(true); return; }
+    const type = (this.state.strategyTypes || []).find((t) => t.name === typeName);
+    const defaultParams = {};
+    for (const p of ((type && type.params_schema) || [])) defaultParams[p.key] = p.default;
+    this._set({ editing: { ...this.state.editing, type: typeName, customMode: false, params: JSON.stringify(defaultParams, null, 2) } });
   }
 
   startEdit(strategy) {
@@ -156,10 +188,23 @@ class StrategyViewModel {
       this._set({ error: "风控参数 JSON 解析失败: " + e.message });
       return;
     }
+    // 自定义策略：先注册类型，再创建实例
+    let strategyType = form.type;
+    if (form.customMode && !form.id) {
+      if (!form.customName || !form.customName.trim()) { this._set({ error: "策略类型名不能为空" }); return; }
+      if (!form.customCode || !form.customCode.trim()) { this._set({ error: "策略代码不能为空" }); return; }
+      try {
+        const resp = await this.facade.strategy.addType({ name: form.customName.trim(), code: form.customCode });
+        if (!resp.ok) { this._set({ error: resp.error }); return; }
+        await this.loadStrategyTypes();
+        strategyType = form.customName.trim();
+      } catch (e) { this._set({ error: e.message }); return; }
+    }
+
     const payload = {
       name: form.name.trim(),
       description: form.description.trim(),
-      type: form.type,
+      type: strategyType,
       params,
       risk,
       status: form.status,

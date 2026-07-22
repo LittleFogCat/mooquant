@@ -1,4 +1,4 @@
-const PAGES = ["quote", "strategy", "backtest", "trade", "settings"];
+const PAGES = ["quote", "strategy", "backtest", "trade", "models", "settings"];
   let _currentPage = "quote";
   const _handlers = {};
   const _leaveHandlers = {};

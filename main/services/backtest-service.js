@@ -21,7 +21,7 @@ class BacktestService {
     return this._engine;
   }
 
-  async run({ strategyId, symbols, startDate, endDate, initialCapital, commission, slippage, dividendType }) {
+  async run({ strategyId, symbols, startDate, endDate, initialCapital, commission, slippage, dividendType, period }) {
     // 加载策略
     const strategy = await this.strategyService.getById(strategyId);
     if (!strategy) return { ok: false, error: "策略不存在: " + strategyId };
@@ -47,6 +47,7 @@ class BacktestService {
       commission: commission || 0.0003,
       slippage: slippage || 0.001,
       dividendType: dividendType || "front",
+      period: period || "1d",
     });
 
     return { ok: true, data: result };

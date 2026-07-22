@@ -62,7 +62,7 @@ renderer/                        main/                           bridge/
 ### Python 桥（bridge/）
 
 - **`qmt_server.py`** — 主进程通过 `spawn` 启动的 stdio JSON-RPC 服务（行分隔 JSON）。请求 `{"id","method","params"}`，响应 `{"id","result"}` 或 `{"id","error"}`。
-  - 已实现方法：`ping`（心跳）、`quote.*`（行情快照/K线/订阅）、`trade.*`（下单/撤单/持仓/资金）、`stock.*`（股票同步/列表）、`strategy.list/signal/export`（策略框架：列策略/算信号/导出QMT）
+  - 已实现方法：`ping`（心跳）、`quote.*`（行情快照/K线/订阅）、`trade.*`（下单/撤单/持仓/资金）、`stock.*`（股票同步/列表）、`strategy.list/signal/export/add/delete`（策略框架：列策略/算信号/导出/添加自定义策略/删除策略）
   - **xtquant 路径**：通过 `.env` 中 `XTQUANT_PATH` 配置，`ensure_xtquant()` 读取 `os.environ.get("XTQUANT_PATH")`
   - **miniQMT 连接**：通过 `.env` 中 `QMT_HOST` / `QMT_PORT` 配置（默认 127.0.0.1:58610）
   - **编码处理**：强制 UTF-8 stdout，并用 `contextlib.redirect_stdout` 抑制 xtquant 内部输出（避免破坏 JSON-RPC 协议）
@@ -79,7 +79,7 @@ renderer/                        main/                           bridge/
 - **无副作用原则**：渲染层除 `bootstrap.js` 外的文件不碰 DOM，直到 bootstrap 执行。
 - **新增行情功能时**，遵循分层：新 IPC 通道要在 `preload.js` 暴露 + `ipc/index.js` 注册 + Service 编排，不要在 IPC 层或 preload 写业务。
 - **auto 模式回落**：`createDataSource({mode:"auto"})` 会 try QMT init，失败后静默回落 mock。调试时注意控制台 `[datasource]` 日志区分实际数据源。
-- **策略统一**：策略信号计算统一在 `bridge/strategies/`（Python），回测引擎与实盘执行器调用**同一个 `on_bar`**，Node 侧不再写策略逻辑（`main/strategies/ma_cross.js` 已 deprecated）。新增策略 = 丢 `.py` 到 `data/strategies/user/`，重启自动注册，框架零修改。
+- **策略统一**：策略信号计算统一在 `bridge/strategies/`（Python），回测引擎与实盘执行器调用**同一个 `on_bar`**，Node 侧不再写策略逻辑（`main/strategies/ma_cross.js` 已 deprecated）。新增策略 = UI 编写代码自动注册（`strategy.add` RPC，保存即生效无需重启），或丢 `.py` 到 `data/strategies/user/`。策略 RPC 走独立 strategyBridge（不依赖行情数据源，mock 模式也可用）。UI 据 `params_schema` 自动生成参数表单。
 - **策略导出**：`strategy.export` RPC 用适配壳包装，把策略类源码原样嵌入 QMT 单文件脚本（init/handlebar/stop 壳 + Context 适配层），粘到 QMT 客户端即可运行。
 
 ## 项目结构

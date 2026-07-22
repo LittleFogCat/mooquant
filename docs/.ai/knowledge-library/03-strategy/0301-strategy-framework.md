@@ -7,7 +7,7 @@
 ### 设计目标
 
 1. **策略统一**：回测与实盘走同一个 `on_bar`，消除"回测赚钱实盘亏钱"的逻辑分歧。
-2. **灵活扩展**：丢一个 `.py` 到 `data/strategies/user/` 即新增策略，框架代码零修改。
+2. **灵活扩展**：UI 直接编写策略代码自动注册，或丢 `.py` 到 `data/strategies/user/`，框架代码零修改。
 3. **跨平台导出**：一键导出 QMT 单文件脚本，粘到客户端即可运行。
 
 ### 与 QMT/xtquant 的边界
@@ -48,6 +48,16 @@ bridge/strategies/
 
 ### 写一个自定义策略
 
+**方式一：UI 编写（推荐）**
+
+1. 策略管理页点「+ 新建策略」
+2. 类型下拉选「✚ 编写自定义策略...」
+3. 填策略类型名 + 编写 Python 代码（内置模板，含均线策略示例）
+4. 保存后自动注册为新的策略类型，即刻可在类型下拉中选用
+5. 选用后参数表单根据 `params_schema` 自动生成，无需手写 JSON
+
+**方式二：手动丢文件**
+
 1. 新建 `data/strategies/user/my_strategy.py`
 2. 继承 `StrategyBase`，实现 `on_bar`：
 
@@ -82,6 +92,8 @@ class MyStrategy(StrategyBase):
 
 3. 重启应用，策略自动注册，UI 可见。
 
+> UI 编写方式无需重启，保存即注册。
+
 ### 关键约定
 
 - `on_bar` 返回 `Signal` / `PortfolioSignal` / `None`（None 表示 hold）。
@@ -113,3 +125,47 @@ UI 策略列表点「导出」-> 弹窗展示脚本 -> 复制 -> 粘到 QMT 客�
 - 简单买卖/调仓策略 100% 通用。
 - 用到 QMT 特有能力（板块成分股、L2 数据）的策略导出后需手动调整。
 - 回测用 `order_target_percent`，实盘用 `passorder`（按 `do_back_test` 自动分支）。
+
+## 0304 · 策略 Bridge 与动态注册
+
+### 策略功能与行情数据源解耦
+
+策略 RPC（`strategy.list/signal/export/add/delete`）通过独立的 **strategyBridge** 调用 Python 桥，不依赖行情数据源：
+
+- **qmt 模式**：strategyBridge 复用行情数据源的 Python 进程
+- **mock/auto 模式**：strategyBridge 独立 spawn `qmt_server.py`（策略 RPC 不需要 miniQMT 连接，`ping` 容错不抛异常）
+- **Python 不可用**：strategyBridge = null，策略功能降级（返回空列表），行情不受影响
+
+这样无论行情走 mock 还是 qmt，策略类型列表、自定义策略添加、信号计算、导出都能正常工作。
+
+### strategy.add / strategy.delete RPC
+
+| RPC | 参数 | 返回 | 说明 |
+|-----|------|------|------|
+| `strategy.add` | `{name, code}` | `{strategy: metadata}` | 写源码到 `data/strategies/user/{name}.py` 并即时注册 |
+| `strategy.delete` | `{name}` | `{ok: true}` | 删除用户策略文件并注销注册 |
+
+- `name` 须为合法标识符（字母/数字/下划线，不以数字开头），不能与 builtin 冲突
+- `code` 须含 `StrategyBase` 子类，且类属性 `name` 与参数 `name` 一致
+- 代码加载失败时返回详细错误（含 traceback），UI 直接展示
+
+### IPC 通道
+
+| IPC 通道 | 说明 |
+|---------|------|
+| `strategy:types` | 列出所有已注册策略类型元数据 |
+| `strategy:addType` | 添加自定义策略类型（UI 编写代码） |
+| `strategy:deleteType` | 删除用户策略类型 |
+| `strategy:export` | 导出策略为目标平台脚本 |
+
+### params_schema 参数表单
+
+UI 根据策略类型的 `params_schema` 自动生成参数输入表单：
+
+| type | 控件 |
+|------|------|
+| `int` / `float` | number input（带 min/max/step） |
+| `bool` | select（是/否） |
+| `string` / 其他 | text input |
+
+无 `params_schema` 的策略 fallback 到 JSON 编辑器。

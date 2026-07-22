@@ -1,7 +1,7 @@
 /**
  * mookquant · IPC 路由
  */
-function registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService }) {
+function registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, strategyBridge, modelService }) {
   const { ipcMain } = require("electron");
   // ---- 行情 ----
   ipcMain.handle("quote:query", async (_e, s) => quoteService.query(s));
@@ -19,21 +19,39 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
     ipcMain.handle("strategy:list", async () => { try { return { ok: true, data: await strategyService.list() }; } catch (e) { return { ok: false, error: e.message }; } });
     ipcMain.handle("strategy:types", async () => {
       try {
-        const src = quoteService && quoteService.source;
-        if (src && typeof src.strategyList === "function") {
-          const r = await src.strategyList();
+        if (strategyBridge && typeof strategyBridge.strategyList === "function") {
+          const r = await strategyBridge.strategyList();
           return { ok: true, data: (r && r.strategies) || [] };
         }
         return { ok: true, data: [] };
-      } catch (e) { return { ok: true, data: [] }; }
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    ipcMain.handle("strategy:addType", async (_e, payload) => {
+      try {
+        if (strategyBridge && typeof strategyBridge.strategyAdd === "function") {
+          const r = await strategyBridge.strategyAdd(payload || {});
+          if (r && r.error) return { ok: false, error: r.error };
+          return { ok: true, data: (r && r.strategy) || r };
+        }
+        return { ok: false, error: "策略 bridge 不可用" };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    ipcMain.handle("strategy:deleteType", async (_e, payload) => {
+      try {
+        if (strategyBridge && typeof strategyBridge.strategyDelete === "function") {
+          const r = await strategyBridge.strategyDelete(payload || {});
+          if (r && r.error) return { ok: false, error: r.error };
+          return { ok: true, data: r || { ok: true } };
+        }
+        return { ok: false, error: "策略 bridge 不可用" };
+      } catch (e) { return { ok: false, error: e.message }; }
     });
     ipcMain.handle("strategy:export", async (_e, payload) => {
       try {
-        const src = quoteService && quoteService.source;
-        if (src && typeof src.strategyExport === "function") {
-          return { ok: true, data: await src.strategyExport(payload || {}) };
+        if (strategyBridge && typeof strategyBridge.strategyExport === "function") {
+          return { ok: true, data: await strategyBridge.strategyExport(payload || {}) };
         }
-        return { ok: false, error: "当前数据源不支持策略导出" };
+        return { ok: false, error: "策略 bridge 不可用" };
       } catch (e) { return { ok: false, error: e.message }; }
     });
     ipcMain.handle("strategy:get", async (_e, id) => { try { return { ok: true, data: await strategyService.getById(id) }; } catch (e) { return { ok: false, error: e.message }; } });
@@ -73,4 +91,18 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
     ipcMain.handle("settings:set", async (_e, patch) => configManager.set(patch));
   }
 }
+  // ---- 模型服务 ----
+  if (modelService) {
+    ipcMain.handle("model:status", async () => modelService.status());
+    ipcMain.handle("model:strategies", async () => { try { return await modelService.listStrategies(); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:strategy", async (_e, name) => { try { return await modelService.getStrategy(name); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:addStrategy", async (_e, payload) => { try { return await modelService.addStrategy(payload); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:deleteStrategy", async (_e, name) => { try { return await modelService.deleteStrategy(name); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:models", async () => { try { return await modelService.listModels(); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:getModel", async (_e, id) => { try { return await modelService.getModel(id); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:deleteModel", async (_e, id) => { try { return await modelService.deleteModel(id); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:train", async (_e, config) => { try { return await modelService.startTraining(config); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:trainStatus", async (_e, taskId) => { try { return await modelService.getTrainingStatus(taskId); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:signal", async (_e, payload) => { try { return await modelService.computeSignal(payload); } catch (e) { return { ok: false, error: e.message }; } });
+  }
 module.exports = { registerIpc };

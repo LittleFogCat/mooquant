@@ -1,6 +1,7 @@
 import * as echarts from 'echarts';
 import flatpickr from 'flatpickr';
 import 'flatpickr/dist/flatpickr.min.css';
+import '../../css/flatpickr-override.css';
 import { Mandarin } from 'flatpickr/dist/l10n/zh';
 
 flatpickr.localize(Mandarin);
@@ -68,15 +69,15 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
     const klineBars = result.bars || [];
     let klineHtml = `<div class="equity-curve">暂无K线数据</div>`;
     if (klineBars.length > 1) {
-      klineHtml = `<div id="btKlineChart" style="width:100%;height:360px"></div>`;
+      klineHtml = `<div id="btKlineChart" style="width:100%"></div>`;
     }
     const tradeRows = trades.slice(0, 50).map(t => `
       <tr><td>${esc(t.date)}</td><td><span class="badge badge-${t.side === "buy" ? "buy" : "sell"}">${t.side === "buy" ? "买入" : "卖出"}</span></td><td>${esc(t.symbol)}</td><td class="num">${fmtNum(t.price)}</td><td class="num">${t.quantity}</td><td class="num">${fmtNum(t.amount, 0)}</td><td class="${cls(t.pnl)} num">${t.pnl ? fmtNum(t.pnl) : "-"}</td></tr>
     `).join("");
     return `
-      <div class="card"><div class="card-title">绩效指标</div><div class="stats-grid">${statsHtml}</div></div>
+      <div class="card"><div class="card-title">${result.name || ""}（${result.symbol || ""}）</div><div class="stats-grid">${statsHtml}</div></div>
       <div class="card"><div class="card-title">净值曲线</div>${curveHtml}</div>
-      <div class="card"><div class="card-title">B/S 点</div>${klineHtml}</div>
+      <div class="kline-card" style="margin:0 0 16px 0">${klineHtml}</div>
       <div class="card"><div class="card-title">交易记录 (前 50 笔)</div>${trades.length ? `<table class="data-table"><thead><tr><th>日期</th><th>方向</th><th>标的</th><th class="num">价格</th><th class="num">数量</th><th class="num">金额</th><th class="num">盈亏</th></tr></thead><tbody>${tradeRows}</tbody></table>` : `<div class="empty-state"><div class="empty-state-text">无交易记录</div></div>`}</div>
     `;
   }
@@ -172,14 +173,63 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
     }
   }
 
+  // Aggregate daily bars + trades into the selected display period (no re-backtest).
+  // Daily trades merge into weekly/monthly bars, so a bar with both buy & sell shows "T".
+  function aggregateForPeriod(bars, trades, period) {
+    if (!bars || bars.length < 2) return { bars: bars || [], trades: trades || [] };
+    if (period === "1d") return { bars: bars, trades: trades };
+    function groupKey(dateStr) {
+      var s = String(dateStr).slice(0, 10);
+      if (period === "1mon") return s.slice(0, 7);
+      var d = new Date(s + "T00:00:00");
+      var day = (d.getDay() + 6) % 7; // 0 = Monday
+      d.setDate(d.getDate() - day);
+      var y = d.getFullYear();
+      var m = String(d.getMonth() + 1).padStart(2, "0");
+      var dd = String(d.getDate()).padStart(2, "0");
+      return y + "-" + m + "-" + dd;
+    }
+    var groups = {}, order = [];
+    bars.forEach(function (b) {
+      var key = groupKey(b.date);
+      if (!groups[key]) { groups[key] = { list: [], aggDate: b.date }; order.push(key); }
+      groups[key].list.push(b);
+    });
+    var aggBars = order.map(function (key) {
+      var g = groups[key].list;
+      return {
+        date: groups[key].aggDate,
+        open: Number(g[0].open),
+        high: Math.max.apply(null, g.map(function (b) { return Number(b.high); })),
+        low: Math.min.apply(null, g.map(function (b) { return Number(b.low); })),
+        close: Number(g[g.length - 1].close),
+        volume: g.reduce(function (s, b) { return s + Number(b.volume || 0); }, 0),
+      };
+    });
+    var dateToAgg = {};
+    bars.forEach(function (b) { dateToAgg[b.date] = groups[groupKey(b.date)].aggDate; });
+    var aggTrades = (trades || []).map(function (t) {
+      return Object.assign({}, t, { date: dateToAgg[t.date] || t.date });
+    });
+    return { bars: aggBars, trades: aggTrades };
+  }
+
   function renderKlineChart(bars, trades, vm) {
     const container = document.getElementById("btKlineChart");
     if (!container || !bars || bars.length < 2) return;
-    var barCount = bars.length;
+    const period = (vm && vm.state && vm.state.period) || "1d";
+    const agg = aggregateForPeriod(bars, trades || [], period);
+    var barCount = agg.bars.length;
     var visibleBars = Math.min(barCount, 150);
     var dzStart = Math.max(0, 100 - (visibleBars / barCount * 100));
-    _klineChart = KlineChart.render(container, bars, {
-      trades: trades || [],
+    _klineChart = KlineChart.render(container, agg.bars, {
+      trades: agg.trades,
+      title: "B/S点",
+      height: 380,
+      periods: KlineChart.PERIOD_OPTIONS.filter(function (p) {
+        return ["1d", "1w", "1mon"].indexOf(p.value) >= 0;
+      }),
+      period: period,
       dividendType: (vm && vm.state && vm.state.dividendType) || "front",
       dataZoomStart: dzStart,
       dataZoomEnd: 100,
@@ -187,6 +237,14 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
         if (settings.dividendType && vm) {
           vm.setField("dividendType", settings.dividendType);
           vm.run();
+        }
+      },
+      onPeriodChange: function (p) {
+        if (vm) {
+          vm.state.period = p;
+          try { vm._saveConfig(); } catch (e) {}
+          if (_klineChart) { try { _klineChart.destroy(); } catch (e) {} _klineChart = null; }
+          renderKlineChart(vm.state.result ? vm.state.result.bars : null, vm.state.result ? vm.state.result.trades : null, vm);
         }
       }
     });
@@ -229,25 +287,30 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
       // Init flatpickr on date inputs
       const startEl = document.getElementById("bt_start");
       const endEl = document.getElementById("bt_end");
+      // flatpickr treats year/month switches as calendar navigation only; the selected date (and thus
+      // the input box) is not updated until a day is picked. We extract a shared config and, via
+      // onYearChange, sync the selected date's year to the current year and trigger onChange.
+      const fpConfig = (field) => ({
+        locale: "zh",
+        dateFormat: "Y-m-d",
+        theme: "dark",
+        maxDate: "today",
+        onChange: (dates, val) => vm.setField(field, val),
+        onYearChange: (selectedDates, dateStr, instance) => {
+          if (selectedDates.length > 0) {
+            const d = selectedDates[0];
+            const newDate = new Date(instance.currentYear, d.getMonth(), d.getDate());
+            instance.setDate(newDate, true);
+          }
+        },
+      });
       if (startEl) {
         startEl.value = state.startDate || "";
-        _fpStart = flatpickr(startEl, {
-          locale: "zh",
-          dateFormat: "Y-m-d",
-          theme: "dark",
-          maxDate: "today",
-          onChange: (dates, val) => vm.setField("startDate", val),
-        });
+        _fpStart = flatpickr(startEl, fpConfig("startDate"));
       }
       if (endEl) {
         endEl.value = state.endDate || "";
-        _fpEnd = flatpickr(endEl, {
-          locale: "zh",
-          dateFormat: "Y-m-d",
-          theme: "dark",
-          maxDate: "today",
-          onChange: (dates, val) => vm.setField("endDate", val),
-        });
+        _fpEnd = flatpickr(endEl, fpConfig("endDate"));
       }
       // Run button
       const runBtn = document.getElementById("bt_run");

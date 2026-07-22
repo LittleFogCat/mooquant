@@ -127,7 +127,84 @@ def _to_xtcode(raw):
     return s.upper()
 
 
-def fetch_real_bars(symbol, start_date, end_date, dividend_type="front"):
+def _merge_bars(bars):
+    """合并多根 bar 为一根 OHLCV bar。"""
+    if not bars:
+        return None
+    merged = {
+        "date": bars[0]["date"],
+        "open": bars[0]["open"],
+        "high": max(b["high"] for b in bars),
+        "low": min(b["low"] for b in bars),
+        "close": bars[-1]["close"],
+        "volume": sum(b["volume"] for b in bars),
+    }
+    if "time" in bars[0]:
+        merged["time"] = bars[0]["time"]
+    if "amount" in bars[0]:
+        merged["amount"] = sum(b.get("amount", 0) for b in bars)
+    return merged
+
+
+def _aggregate_weekly(bars):
+    """日线聚合成周线（按 ISO 周）。"""
+    from datetime import datetime
+    result = []
+    current_key = None
+    current_group = []
+    for bar in bars:
+        try:
+            dt = datetime.strptime(bar["date"][:10], "%Y-%m-%d")
+        except (ValueError, KeyError, TypeError):
+            continue
+        iso = dt.isocalendar()
+        week_key = (iso[0], iso[1])
+        if week_key != current_key:
+            if current_group:
+                result.append(_merge_bars(current_group))
+            current_key = week_key
+            current_group = [bar]
+        else:
+            current_group.append(bar)
+    if current_group:
+        result.append(_merge_bars(current_group))
+    return result
+
+
+def _aggregate_monthly(bars):
+    """日线聚合成月线（按 YYYY-MM）。"""
+    result = []
+    current_key = None
+    current_group = []
+    for bar in bars:
+        try:
+            month_key = bar["date"][:7]
+        except (KeyError, TypeError):
+            continue
+        if month_key != current_key:
+            if current_group:
+                result.append(_merge_bars(current_group))
+            current_key = month_key
+            current_group = [bar]
+        else:
+            current_group.append(bar)
+    if current_group:
+        result.append(_merge_bars(current_group))
+    return result
+
+
+def _aggregate_bars(bars, target_period):
+    """将基础周期 bar 聚合为目标周期（周线/月线从日线聚合）。"""
+    if not bars:
+        return []
+    if target_period == "1w":
+        return _aggregate_weekly(bars)
+    elif target_period == "1mon":
+        return _aggregate_monthly(bars)
+    return bars
+
+
+def fetch_real_bars(symbol, start_date, end_date, dividend_type="front", period="1d"):
     """\u4ece\u6570\u636e\u5e93\u7f13\u5b58\u6216 xtquant \u83b7\u53d6\u771f\u5b9e\u5386\u53f2\u65e5K\u7ebf\u6570\u636e\uff08\u524d\u590d\u6743\uff09
 
     Returns: (bars, error_msg)  bars=None \u65f6 error_msg \u6709\u503c
@@ -136,10 +213,11 @@ def fetch_real_bars(symbol, start_date, end_date, dividend_type="front"):
     if not xt_code:
         return None, "\u65e0\u6548\u7684\u80a1\u7968\u4ee3\u7801"
 
-    # dividend_type passed from caller
+    # 周线/月线：xtquant 不直接支持，先取日线再由调用方聚合
+    fetch_period = "1d" if period in ("1w", "1mon") else period
 
     # 1. \u5148\u67e5\u6570\u636e\u5e93\u7f13\u5b58
-    cached = db_cache.query_bars_by_date(xt_code, "1d", start_date, end_date, dividend_type)
+    cached = db_cache.query_bars_by_date(xt_code, fetch_period, start_date, end_date, dividend_type)
     if cached and len(cached) > 0:
         db_start = cached[0]["date"]
         db_end = cached[-1]["date"]
@@ -175,13 +253,13 @@ def fetch_real_bars(symbol, start_date, end_date, dividend_type="front"):
         end_time = end_date.replace("-", "")
 
         xtdata.download_history_data(
-            xt_code, period="1d",
+            xt_code, period=fetch_period,
             start_time=start_time, end_time=end_time,
             incrementally=True,
         )
 
         data = xtdata.get_market_data_ex(
-            [], [xt_code], period="1d",
+            [], [xt_code], period=fetch_period,
             start_time=start_time, end_time=end_time,
             dividend_type=dividend_type,
         ) or {}
@@ -210,7 +288,7 @@ def fetch_real_bars(symbol, start_date, end_date, dividend_type="front"):
 
         # 3. \u4fdd\u5b58\u5230\u6570\u636e\u5e93
         if bars:
-            saved = db_cache.save_bars(xt_code, "1d", bars, dividend_type)
+            saved = db_cache.save_bars(xt_code, fetch_period, bars, dividend_type)
             log("\u4fdd\u5b58 {} \u6761\u5230\u6570\u636e\u5e93".format(saved))
 
         return bars, None
@@ -225,6 +303,26 @@ def fetch_real_bars(symbol, start_date, end_date, dividend_type="front"):
 # ----------------------------------------------------------------------
 # 回测引擎
 # ----------------------------------------------------------------------
+def _fetch_stock_name(symbol):
+    """Fetch stock display name via xtquant; fall back to the code itself on failure."""
+    xt_code = _to_xtcode(symbol)
+    custom_path = os.environ.get("XTQUANT_PATH", "")
+    if custom_path and custom_path not in sys.path:
+        sys.path.insert(0, custom_path)
+    try:
+        from xtquant import xtdata
+        try:
+            port = int(os.environ.get("QMT_PORT", "58610"))
+            xtdata.connect(port=port)
+        except Exception:
+            pass
+        info = xtdata.get_instrument_detail(xt_code) or {}
+        name = info.get("InstrumentName", "")
+        return name if name else symbol
+    except Exception:
+        return symbol
+
+
 def run_backtest(params):
     """
     执行回测
@@ -252,11 +350,13 @@ def run_backtest(params):
     commission_rate = float(params.get("commission", 0.0003))
     slippage_rate = float(params.get("slippage", 0.001))
     dividend_type = params.get("dividendType", "front")
+    period = params.get("period", "1d")
 
     symbol = symbols[0]  # 当前支持单标的
+    stock_name = _fetch_stock_name(symbol)
 
     # 优先使用 xtquant 真实数据，失败时回退到模拟数据
-    bars, fetch_err = fetch_real_bars(symbol, start_date, end_date, dividend_type)
+    bars, fetch_err = fetch_real_bars(symbol, start_date, end_date, dividend_type, period)
     if bars and len(bars) > 0:
         log("回测使用真实数据: {} 条".format(len(bars)))
         data_source = "real"
@@ -264,6 +364,7 @@ def run_backtest(params):
         log("回测使用模拟数据: {}".format(fetch_err))
         bars = generate_mock_bars(symbol, start_date, end_date)
         data_source = "mock"
+
 
     if len(bars) < 5:
         raise ValueError("回测数据不足，请扩大时间范围")
@@ -457,6 +558,8 @@ def run_backtest(params):
         "trades": trades,
         "equityCurve": equity_curve,
         "dataSource": data_source,
+        "name": stock_name,
+        "symbol": symbol,
         "bars": [{"date": b["date"], "open": b["open"], "high": b["high"],
                    "low": b["low"], "close": b["close"], "volume": b.get("volume", 0)} for b in bars],
     }

@@ -31,7 +31,7 @@ sys.path.insert(0, _os_mod.path.dirname(_os_mod.path.abspath(__file__)))
 import db as db_cache
 
 # 策略框架（回测与实盘共用同一份策略代码）
-from strategies.registry import load_all, get as get_strategy, list_strategies
+from strategies.registry import load_all, get as get_strategy, list_strategies, save_strategy, delete_strategy
 from strategies.base import Context
 
 # 启动时预加载所有策略（重启加载模式；热加载后续增强）
@@ -1063,6 +1063,42 @@ def handle_strategy_export(params):
         return {"error": "导出失败: {}".format(e)}
 
 
+def handle_strategy_add(params):
+    """添加用户自定义策略（写源码到 user/ 目录并即时注册）。
+
+    params:
+      name: str   策略类型名（合法标识符，与代码中类属性 name 一致）
+      code: str   策略 Python 源码
+    """
+    name = (params.get("name") or "").strip()
+    code = params.get("code") or ""
+    if not name:
+        return {"error": "缺少策略名 name"}
+    if not code:
+        return {"error": "缺少策略代码 code"}
+    try:
+        metadata = save_strategy(name, code)
+        return {"strategy": metadata}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def handle_strategy_delete(params):
+    """删除用户策略（仅限 user/ 目录下的）。
+
+    params:
+      name: str   策略类型名
+    """
+    name = (params.get("name") or "").strip()
+    if not name:
+        return {"error": "缺少策略名 name"}
+    try:
+        delete_strategy(name)
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ----------------------------------------------------------------------
 METHOD_MAP = {
     "stock.sync": handle_stock_sync,
@@ -1080,6 +1116,8 @@ METHOD_MAP = {
     "strategy.list": handle_strategy_list,
     "strategy.signal": handle_strategy_signal,
     "strategy.export": handle_strategy_export,
+    "strategy.add": handle_strategy_add,
+    "strategy.delete": handle_strategy_delete,
 }
 
 

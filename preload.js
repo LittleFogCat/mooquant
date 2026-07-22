@@ -25,6 +25,8 @@ const facade = {
     create: (p) => ipcRenderer.invoke("strategy:create", p),
     update: (id, p) => ipcRenderer.invoke("strategy:update", id, p),
     delete: (id) => ipcRenderer.invoke("strategy:delete", id),
+    addType: (payload) => ipcRenderer.invoke("strategy:addType", payload),
+    deleteType: (payload) => ipcRenderer.invoke("strategy:deleteType", payload),
   },
   backtest: { run: (c) => ipcRenderer.invoke("backtest:run", c) },
   executor: {
@@ -49,6 +51,19 @@ const facade = {
   settings: {
     get: () => ipcRenderer.invoke("settings:get"),
     set: (patch) => ipcRenderer.invoke("settings:set", patch),
+  },
+  modelServer: {
+    status: () => ipcRenderer.invoke("model:status"),
+    listStrategies: () => ipcRenderer.invoke("model:strategies"),
+    getStrategy: (name) => ipcRenderer.invoke("model:strategy", name),
+    addStrategy: (payload) => ipcRenderer.invoke("model:addStrategy", payload),
+    deleteStrategy: (name) => ipcRenderer.invoke("model:deleteStrategy", name),
+    listModels: () => ipcRenderer.invoke("model:models"),
+    getModel: (id) => ipcRenderer.invoke("model:getModel", id),
+    deleteModel: (id) => ipcRenderer.invoke("model:deleteModel", id),
+    startTraining: (config) => ipcRenderer.invoke("model:train", config),
+    getTrainingStatus: (taskId) => ipcRenderer.invoke("model:trainStatus", taskId),
+    computeSignal: (payload) => ipcRenderer.invoke("model:signal", payload),
   },
   app: { info: () => ipcRenderer.invoke("app:info"), restart: () => ipcRenderer.invoke("app:restart") },
 };
