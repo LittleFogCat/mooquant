@@ -90,7 +90,6 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
     ipcMain.handle("settings:get", async () => configManager.get());
     ipcMain.handle("settings:set", async (_e, patch) => configManager.set(patch));
   }
-}
   // ---- 模型服务 ----
   if (modelService) {
     ipcMain.handle("model:status", async () => modelService.status());
@@ -105,4 +104,5 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
     ipcMain.handle("model:trainStatus", async (_e, taskId) => { try { return await modelService.getTrainingStatus(taskId); } catch (e) { return { ok: false, error: e.message }; } });
     ipcMain.handle("model:signal", async (_e, payload) => { try { return await modelService.computeSignal(payload); } catch (e) { return { ok: false, error: e.message }; } });
   }
+}
 module.exports = { registerIpc };
