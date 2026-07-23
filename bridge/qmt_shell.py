@@ -9,8 +9,10 @@ import requests
 
 # === Configuration (modify as needed) ===
 SERVER_URL = 'http://127.0.0.1:8765'
-STRATEGY = 'ma_cross'       # Strategy type name
+STRATEGY = 'ma_cross'       # Strategy type name (e.g. ma_cross, momentum, lstm_trend)
 PARAMS = {}                   # Strategy params (override defaults)
+                              # For ML strategies (e.g. lstm_trend), model_id is auto-filled
+                              # from the active model set in model management page.
 SYMBOL = '600036.SH'        # Target symbol
 PERIOD = '1d'                # K-line period
 COUNT = 60                    # Number of bars to fetch

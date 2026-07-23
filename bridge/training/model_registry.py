@@ -124,6 +124,22 @@ class ModelRegistry:
             return json.load(f)
 
     @classmethod
+    def update_meta(cls, model_id, patch):
+        """Update model metadata fields (name, status, etc.)."""
+        with cls._lock:
+            mdir = os.path.join(MODEL_DIR, model_id)
+            meta_path = os.path.join(mdir, 'meta.json')
+            if not os.path.exists(meta_path):
+                raise FileNotFoundError(model_id)
+            with open(meta_path) as f:
+                meta = json.load(f)
+            meta.update(patch)
+            with open(meta_path, 'w') as f:
+                json.dump(meta, f, indent=2, ensure_ascii=False)
+            cls._update_index()
+            return meta
+
+    @classmethod
     def delete(cls, model_id):
         import shutil
         with cls._lock:

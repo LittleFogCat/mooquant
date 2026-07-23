@@ -20,6 +20,26 @@ from training.model_registry import ModelRegistry
 from training.pipeline import TrainPipeline
 from training.builtin_models import ensure_builtin_models
 
+# Active model persistence
+ACTIVE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'models', 'active.json')
+
+
+def _get_active_model_id():
+    if os.path.exists(ACTIVE_FILE):
+        try:
+            with open(ACTIVE_FILE) as f:
+                return json.load(f).get('model_id', '')
+        except (json.JSONDecodeError, IOError):
+            pass
+    return ''
+
+
+def _set_active_model_id(model_id):
+    os.makedirs(os.path.dirname(ACTIVE_FILE), exist_ok=True)
+    with open(ACTIVE_FILE, 'w') as f:
+        json.dump({'model_id': model_id}, f, ensure_ascii=False)
+
+
 # Global state
 _pipeline = TrainPipeline()
 _strategies_loaded = False
@@ -42,6 +62,12 @@ def _ensure_loaded():
 def _compute_signal(strategy_name, bars, params, symbol):
     # Compute signal: instantiate strategy, feed bars, return last signal.
     strat_cls = get(strategy_name)
+    # Auto-inject active model_id for ML strategies without explicit model_id
+    if getattr(strat_cls, 'is_ml', False) and not (params or {}).get('model_id'):
+        active_id = _get_active_model_id()
+        if active_id:
+            params = dict(params or {})
+            params['model_id'] = active_id
     strat = strat_cls(params or {})
     ctx = Context()
     ctx.symbol = symbol or ''
@@ -102,6 +128,16 @@ class ModelHandler(BaseHTTPRequestHandler):
                 self._send_error('Strategy not found: ' + name, 404, 'NOT_FOUND')
         elif path == '/models':
             self._send_json(ModelRegistry.list_models())
+        elif path == '/models/active':
+            active_id = _get_active_model_id()
+            if active_id:
+                try:
+                    meta = ModelRegistry.get_meta(active_id)
+                    self._send_json({'model_id': active_id, 'meta': meta})
+                except FileNotFoundError:
+                    self._send_json({'model_id': '', 'meta': None})
+            else:
+                self._send_json({'model_id': '', 'meta': None})
         elif len(parts) == 2 and parts[0] == 'models':
             try:
                 meta = ModelRegistry.get_meta(parts[1])
@@ -158,6 +194,31 @@ class ModelHandler(BaseHTTPRequestHandler):
             config = self._read_body()
             task_id = _pipeline.start_train(config)
             self._send_json({'task_id': task_id})
+        elif len(parts) == 3 and parts[0] == 'models' and parts[2] == 'activate':
+            model_id = parts[1]
+            try:
+                _set_active_model_id(model_id)
+                self._send_json({'ok': True, 'model_id': model_id})
+            except Exception as e:
+                self._send_error(str(e), 500, 'INTERNAL')
+        else:
+            self._send_error('Unknown endpoint', 404, 'NOT_FOUND')
+
+    def do_PUT(self):
+        _ensure_loaded()
+        path = urlparse(self.path).path
+        parts = [p for p in path.split('/') if p]
+
+        if len(parts) == 2 and parts[0] == 'models':
+            model_id = parts[1]
+            patch = self._read_body()
+            try:
+                meta = ModelRegistry.update_meta(model_id, patch)
+                self._send_json(meta)
+            except FileNotFoundError:
+                self._send_error('Model not found: ' + model_id, 404, 'NOT_FOUND')
+            except Exception as e:
+                self._send_error(str(e), 500, 'INTERNAL')
         else:
             self._send_error('Unknown endpoint', 404, 'NOT_FOUND')
 

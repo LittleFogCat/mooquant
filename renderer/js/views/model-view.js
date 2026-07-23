@@ -58,17 +58,23 @@ function render(root, vm) {
         html += '<p style="color:var(--text-3)">\u6682\u65e0\u6a21\u578b\uff0c\u8bf7\u5148\u8bad\u7ec3\u4e00\u4e2a\u6a21\u578b</p>';
       } else {
         html += '<div class="table-wrap"><table class="data-table">';
-        html += '<thead><tr><th>\u540d\u79f0</th><th>\u67b6\u6784</th><th>\u521b\u5efa\u65f6\u95f4</th><th>\u6807\u7684</th><th>\u72b6\u6001</th><th>\u64cd\u4f5c</th></tr></thead>';
+        html += '<thead><tr><th>\u540d\u79f0</th><th>model_id</th><th>\u67b6\u6784</th><th>\u521b\u5efa\u65f6\u95f4</th><th>\u6807\u7684</th><th>\u72b6\u6001</th><th>\u64cd\u4f5c</th></tr></thead>';
         html += '<tbody>';
         for (var i = 0; i < state.models.length; i++) {
           var m = state.models[i];
           html += '<tr>';
           html += '<td>' + escapeHtml(m.name) + '</td>';
+          html += '<td style="font-size:11px;color:var(--text-3);font-family:monospace">' + escapeHtml(m.model_id) + '</td>';
           html += '<td><span class="badge badge-active">' + escapeHtml(m.arch || "-") + '</span></td>';
           html += '<td>' + fmtDate(m.created_at) + '</td>';
           html += '<td style="font-size:12px">' + escapeHtml((m.symbols || []).join(", ") || "-") + '</td>';
           html += '<td><span class="badge ' + (m.status === "active" ? "badge-active" : "badge-draft") + '">' + escapeHtml(m.status || "-") + '</span></td>';
-          html += '<td><button class="btn btn-sm" style="color:var(--red)" data-delete-model="' + escapeHtml(m.model_id) + '">\u5220\u9664</button></td>';
+          var isActive = state.activeModelId === m.model_id;
+          html += '<td style="white-space:nowrap">';
+          html += '<button class="btn btn-sm" style="color:' + (isActive ? "var(--green)" : "var(--text-3)") + '" data-activate-model="' + escapeHtml(m.model_id) + '"' + (isActive ? ' disabled' : '') + '>' + (isActive ? '\u2713 \u5df2\u6fc0\u6d3b' : '\u6fc0\u6d3b') + '</button> ';
+          html += '<button class="btn btn-sm btn-secondary" data-edit-model="' + escapeHtml(m.model_id) + '" data-edit-name="' + escapeHtml(m.name) + '">\u7f16\u8f91</button> ';
+          html += '<button class="btn btn-sm" style="color:var(--red)" data-delete-model="' + escapeHtml(m.model_id) + '">\u5220\u9664</button>';
+          html += '</td>';
           html += '</tr>';
         }
         html += '</tbody></table></div>';
@@ -184,6 +190,17 @@ function render(root, vm) {
 
     } // end if serviceReady
 
+    // ---- Edit modal ----
+    html += '<div class="modal-overlay" id="modelEditModal" style="display:none;z-index:1001">';
+    html += '<div class="modal" style="max-width:400px">';
+    html += '<h2 class="modal-title">\u7f16\u8f91\u6a21\u578b</h2>';
+    html += '<div class="form-group"><label class="form-label">\u6a21\u578b\u540d\u79f0</label>';
+    html += '<input type="text" class="form-input" id="modelEditName" /></div>';
+    html += '<div class="modal-actions">';
+    html += '<button class="btn btn-secondary" id="modelEditCancel">\u53d6\u6d88</button>';
+    html += '<button class="btn btn-primary" id="modelEditSave">\u4fdd\u5b58</button>';
+    html += '</div></div></div>';
+
     root.innerHTML = html;
 
     // ---- Event bindings ----
@@ -220,6 +237,38 @@ function render(root, vm) {
       (function (btn) {
         btn.addEventListener("click", function () { vm.deleteModel(btn.getAttribute("data-delete-model")); });
       })(delBtns[di]);
+    }
+    // Activate buttons
+    var actBtns = root.querySelectorAll("[data-activate-model]");
+    for (var ai = 0; ai < actBtns.length; ai++) {
+      (function (btn) {
+        btn.addEventListener("click", function () { vm.activateModel(btn.getAttribute("data-activate-model")); });
+      })(actBtns[ai]);
+    }
+    // Edit buttons
+    var editBtns = root.querySelectorAll("[data-edit-model]");
+    for (var ei2 = 0; ei2 < editBtns.length; ei2++) {
+      (function (btn) {
+        btn.addEventListener("click", function () {
+          var id = btn.getAttribute("data-edit-model");
+          var name = btn.getAttribute("data-edit-name");
+          var modal = root.querySelector("#modelEditModal");
+          var nameInput = root.querySelector("#modelEditName");
+          if (modal && nameInput) {
+            nameInput.value = name;
+            modal.style.display = "flex";
+            var saveBtn = root.querySelector("#modelEditSave");
+            if (saveBtn) saveBtn.onclick = function () {
+              vm.updateModel(id, { name: nameInput.value });
+              modal.style.display = "none";
+            };
+            var cancelBtn = root.querySelector("#modelEditCancel");
+            if (cancelBtn) cancelBtn.onclick = function () {
+              modal.style.display = "none";
+            };
+          }
+        });
+      })(editBtns[ei2]);
     }
   }
   vm.subscribe(paint);

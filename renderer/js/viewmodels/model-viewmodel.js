@@ -30,6 +30,8 @@ class ModelViewModel {
         batchSize: 32,
         labelType: "classification",
       },
+      // Active model
+      activeModelId: "",
       // Error
       error: null,
     };
@@ -83,7 +85,7 @@ class ModelViewModel {
   async loadAll() {
     await this.loadStatus();
     if (this.state.serviceReady) {
-      await Promise.all([this.loadModels(), this.loadStrategies()]);
+      await Promise.all([this.loadModels(), this.loadStrategies(), this.loadActiveModel()]);
     }
   }
 
@@ -157,6 +159,41 @@ class ModelViewModel {
   async deleteModel(id) {
     try {
       const r = await this.facade.modelServer.deleteModel(id);
+      if (r.ok) {
+        this.loadModels();
+      } else {
+        this._set({ error: r.error });
+      }
+    } catch (e) {
+      this._set({ error: e.message });
+    }
+  }
+
+  async loadActiveModel() {
+    try {
+      const r = await this.facade.modelServer.getActiveModel();
+      if (r.ok && r.data) {
+        this._set({ activeModelId: r.data.model_id || "" });
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  async activateModel(id) {
+    try {
+      const r = await this.facade.modelServer.activateModel(id);
+      if (r.ok) {
+        this._set({ activeModelId: id });
+      } else {
+        this._set({ error: r.error });
+      }
+    } catch (e) {
+      this._set({ error: e.message });
+    }
+  }
+
+  async updateModel(id, patch) {
+    try {
+      const r = await this.facade.modelServer.updateModel(id, patch);
       if (r.ok) {
         this.loadModels();
       } else {

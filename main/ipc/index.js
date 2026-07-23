@@ -103,6 +103,9 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
     ipcMain.handle("model:train", async (_e, config) => { try { return await modelService.startTraining(config); } catch (e) { return { ok: false, error: e.message }; } });
     ipcMain.handle("model:trainStatus", async (_e, taskId) => { try { return await modelService.getTrainingStatus(taskId); } catch (e) { return { ok: false, error: e.message }; } });
     ipcMain.handle("model:signal", async (_e, payload) => { try { return await modelService.computeSignal(payload); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:updateModel", async (_e, id, patch) => { try { return await modelService.updateModel(id, patch); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:activate", async (_e, id) => { try { return await modelService.activateModel(id); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:active", async () => { try { return await modelService.getActiveModel(); } catch (e) { return { ok: false, error: e.message }; } });
   }
 }
 module.exports = { registerIpc };

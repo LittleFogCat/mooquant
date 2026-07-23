@@ -64,6 +64,9 @@ const facade = {
     startTraining: (config) => ipcRenderer.invoke("model:train", config),
     getTrainingStatus: (taskId) => ipcRenderer.invoke("model:trainStatus", taskId),
     computeSignal: (payload) => ipcRenderer.invoke("model:signal", payload),
+    updateModel: (id, patch) => ipcRenderer.invoke("model:updateModel", id, patch),
+    activateModel: (id) => ipcRenderer.invoke("model:activate", id),
+    getActiveModel: () => ipcRenderer.invoke("model:active"),
   },
   app: { info: () => ipcRenderer.invoke("app:info"), restart: () => ipcRenderer.invoke("app:restart") },
 };

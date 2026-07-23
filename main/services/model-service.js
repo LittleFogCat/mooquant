@@ -141,6 +141,27 @@ class ModelService {
     });
   }
 
+  _httpPut(p, body) {
+    return new Promise((resolve, reject) => {
+      const bodyStr = JSON.stringify(body);
+      const req = http.request(this._baseUrl + p, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(bodyStr) },
+      }, (res) => {
+        let data = "";
+        res.on("data", (c) => { data += c; });
+        res.on("end", () => {
+          try { resolve(JSON.parse(data)); }
+          catch (e) { reject(new Error("JSON parse error: " + data.slice(0, 200))); }
+        });
+      });
+      req.on("error", reject);
+      req.setTimeout(5000, () => { req.destroy(); reject(new Error("request timeout")); });
+      req.write(bodyStr);
+      req.end();
+    });
+  }
+
   _httpDelete(p) {
     return new Promise((resolve, reject) => {
       const req = http.request(this._baseUrl + p, { method: "DELETE" }, (res) => {
@@ -198,6 +219,18 @@ class ModelService {
   async deleteModel(id) {
     return { ok: true, data: await this._httpDelete("/models/" + encodeURIComponent(id)) };
   }
+  async updateModel(id, patch) {
+    return { ok: true, data: await this._httpPut("/models/" + encodeURIComponent(id), patch) };
+  }
+
+  async activateModel(id) {
+    return { ok: true, data: await this._httpPost("/models/" + encodeURIComponent(id) + "/activate", {}) };
+  }
+
+  async getActiveModel() {
+    return { ok: true, data: await this._httpGet("/models/active") };
+  }
+
 
   async startTraining(config) {
     return { ok: true, data: await this._httpPost("/train", config) };
