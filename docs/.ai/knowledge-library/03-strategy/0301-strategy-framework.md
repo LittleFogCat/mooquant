@@ -1,4 +1,4 @@
-﻿# 03 策略框架
+# 03 策略框架
 
 > 本章节描述 mookquant 策略模块的统一事件驱动框架。回测与实盘共用同一份策略代码，支持灵活扩展与跨平台导出。
 
@@ -60,6 +60,10 @@ bridge/strategies/
 3. 填策略类型名 + 编写 Python 代码（内置模板，含均线策略示例）
 4. 保存后自动注册为新的策略类型，即刻可在类型下拉中选用
 5. 选用后参数表单根据 `params_schema` 自动生成，无需手写 JSON
+
+> **源码编辑**：所有策略均可在编辑弹窗中查看和修改源码，保存时覆盖原策略类型。
+
+> **复制策略**：列表中可复制当前策略实例，新 ID，草稿状态。
 
 **方式二：手动丢文件**
 
@@ -149,8 +153,9 @@ UI 策略列表点「导出」-> 弹窗展示脚本 -> 复制 -> 粘到 QMT 客�
 |-----|------|------|------|
 | `strategy.add` | `{name, code}` | `{strategy: metadata}` | 写源码到 `data/strategies/user/{name}.py` 并即时注册 |
 | `strategy.delete` | `{name}` | `{ok: true}` | 删除用户策略文件并注销注册 |
+| `strategy.get_code` | `{name}` | `{code: source}` | 获取策略源码（builtin inspect / user file） |
 
-- `name` 须为合法标识符（字母/数字/下划线，不以数字开头），不能与 builtin 冲突
+- `name` 须为合法标识符（字母/数字/下划线，不以数字开头）；同名覆盖（含 builtin）
 - `code` 须含 `StrategyBase` 子类，且类属性 `name` 与参数 `name` 一致
 - 代码加载失败时返回详细错误（含 traceback），UI 直接展示
 
@@ -162,6 +167,7 @@ UI 策略列表点「导出」-> 弹窗展示脚本 -> 复制 -> 粘到 QMT 客�
 | `strategy:addType` | 添加自定义策略类型（UI 编写代码） |
 | `strategy:deleteType` | 删除用户策略类型 |
 | `strategy:export` | 导出策略为目标平台脚本 |
+| `strategy:getCode` | 获取策略源码（UI 编辑用） |
 
 ### params_schema 参数表单
 

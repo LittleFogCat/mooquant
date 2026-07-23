@@ -1,4 +1,4 @@
-﻿# 整体架构
+# 整体架构
 
 mookquant 是一款基于 **Electron** 的量化投资桌面应用，采用 **MVVM + 进程分层 + 数据源可插拔** 的架构。整体设计原则：
 
@@ -139,6 +139,7 @@ class DataSource {
 
 - `config/default.json`：应用静态配置（窗口尺寸、QMT 连接参数、缓存 TTL、数据源 mode）
 - `data/strategies/<id>.json`：策略定义（StrategyService 管理）
+- `data/strategies/user/*.py`：用户策略源码（UI 编写/编辑保存，`strategy.add` RPC 写入）
 - `data/models/{model_id}/`：模型文件（meta.json + config.json + model.pt）
 - `data/models/active.json`：激活模型（model_id + strategy）
 - `data/models/index.json`：模型索引
@@ -254,7 +255,7 @@ mooquant/
 ## 9. 后续扩展建议
 
 - **多数据源**：在 `datasources/index.js` 注册新工厂分支；接口保持不变
-- **更多策略**：在 `bridge/strategies/builtin/` 新增 `.py` 自动注册；或通过 UI「编写自定义策略」添加
+- **更多策略**：在 `bridge/strategies/builtin/` 新增 `.py` 自动注册；或通过 UI 编写自定义策略；所有策略（含内置）均可在 UI 中编辑源码并保存覆盖
 - **更多模型架构**：在 `bridge/strategies/ml/models/` 用 `@register_model` 注册新架构
 - **更多 ML 策略**：在 `bridge/strategies/ml/builtin/` 新增，继承 `MLStrategyBase`
 - **替换 UI 框架**：当前 View 层是 vanilla ES6，渐进替换为 Vue/React 不影响主进程与 IPC 协议

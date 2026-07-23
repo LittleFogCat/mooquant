@@ -1,4 +1,4 @@
-﻿# 公共组件
+# 公共组件
 
 > 渲染层所有 View 组件都在 `renderer/js/views/`，每个组件以 ES Module 形式导出 `render(root, ...)` 函数，遵循"订阅 state → 重渲染"模式。
 
@@ -22,7 +22,7 @@
 | K线图容器 | `kline-view.js` | 监听 state，加载历史数据并喂给图表组件 |
 | K线图组件 | `kline-chart.js` | ECharts 自绘蜡烛图 + 成交量 + 指标线 + 周期切换 |
 | 自选股列表 | `watchlist-view.js` | 侧边栏 ⭐ 自选股，行内展示价/涨跌幅 |
-| 策略管理 | `strategy-view.js` | 策略 CRUD、列表、状态徽章、启动/停止按钮 |
+| 策略管理 | `strategy-view.js` | 策略 CRUD、列表、状态徽章、启动/停止、源码编辑、复制、导出 |
 | 回测视图 | `backtest-view.js` | 回测表单、进度条、绩效指标、收益曲线 |
 | 交易视图 | `trade-view.js` | 下单表单、持仓、当日委托、账户资金 |
 | 设置视图 | `settings-view.js` | 数据源切换、QMT 连接参数、日志查询 |
@@ -329,6 +329,13 @@ ctrl.destroy();                // dispose 时调用（路由切换会触发）
 ```
 
 策略页进入时轮询（5s）`strategyVM.loadExecutorStatus()`，离开时清理。
+
+### 源码编辑与复制
+
+- 编辑弹窗中可展开「策略源码」区域（`<details>` 折叠），查看和修改任意策略（含内置）的 Python 源码
+- 修改源码后保存，通过 `strategy.add` 覆盖原策略类型（非新建）
+- 列表中「复制」按钮复制当前策略实例（新 ID、草稿状态）
+
 
 ---
 
