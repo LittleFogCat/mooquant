@@ -15,13 +15,14 @@ function log(msg) {
 }
 
 class StrategyExecutor {
-  constructor({ strategy, symbols, quoteService, tradeService, strategyService, strategyBridge }) {
+  constructor({ strategy, symbols, quoteService, tradeService, strategyService, strategyBridge, modelService }) {
     this.strategy = strategy;
     this.symbols = symbols || [];
     this.quoteService = quoteService;
     this.tradeService = tradeService;
     this.strategyService = strategyService;
     this.strategyBridge = strategyBridge;
+    this.modelService = modelService;
     this._log = new LogService();
     this._timer = null;
     this.status = "stopped";
@@ -89,19 +90,35 @@ class StrategyExecutor {
         return;
       }
 
-      // 2. 计算信号（通过 Python 桥 RPC，回测与实盘共用同一逻辑）
-      if (!this.strategyBridge || !this.strategyBridge.strategySignal) {
-        this._error = "数据源不支持策略信号计算";
-        return;
-      }
+      // 2. 计算信号（优先通过模型服务 HTTP /signal，回退到 stdio RPC）
       let signal;
       try {
-        signal = await this.strategyBridge.strategySignal({
-          type: this.strategy.type,
-          bars,
-          params: this.strategy.params || {},
-          symbol,
-        });
+        if (this.modelService) {
+          const result = await this.modelService.computeSignal({
+            strategy: this.strategy.type,
+            bars,
+            params: this.strategy.params || {},
+            symbol,
+          });
+          if (result.ok) {
+            signal = result.data;
+          } else {
+            this._error = "信号计算失败: " + (result.error || "未知错误");
+            this._consecutiveErrors++;
+            this._checkCircuitBreaker();
+            return;
+          }
+        } else if (this.strategyBridge && this.strategyBridge.strategySignal) {
+          signal = await this.strategyBridge.strategySignal({
+            type: this.strategy.type,
+            bars,
+            params: this.strategy.params || {},
+            symbol,
+          });
+        } else {
+          this._error = "模型服务和策略桥均不可用";
+          return;
+        }
       } catch (e) {
         this._error = "信号计算失败: " + e.message;
         this._consecutiveErrors++;
@@ -304,11 +321,12 @@ class StrategyExecutor {
 }
 
 class ExecutorService {
-  constructor({ strategyService, quoteService, tradeService, strategyBridge }) {
+  constructor({ strategyService, quoteService, tradeService, strategyBridge, modelService }) {
     this.strategyService = strategyService;
     this.quoteService = quoteService;
     this.tradeService = tradeService;
     this.strategyBridge = strategyBridge;
+    this.modelService = modelService;
     this._executors = new Map();
   }
 
@@ -337,6 +355,7 @@ class ExecutorService {
       tradeService: this.tradeService,
       strategyService: this.strategyService,
       strategyBridge: this.strategyBridge,
+      modelService: this.modelService,
     });
     executor.start();
     this._executors.set(strategyId, executor);

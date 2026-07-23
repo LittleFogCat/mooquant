@@ -168,7 +168,7 @@ app.whenReady().then(async () => {
   tradeService = new TradeService({ source: tradeSource });
 
   updateSplash(splash, "恢复策略执行...", 75);
-  executorService = new ExecutorService({ strategyService, quoteService, tradeService, strategyBridge });
+  executorService = new ExecutorService({ strategyService, quoteService, tradeService, strategyBridge, modelService });
   executorService.restoreRunning();
 
   // 启动模型服务（HTTP 子进程）
