@@ -15,7 +15,11 @@ class MLStrategyBase(StrategyBase):
     def on_after_init(self, ctx):
         model_id = self.params.get('model_id', '')
         if not model_id:
-            raise ValueError('ML strategy requires model_id parameter')
+            # Auto-use active model when no explicit model_id given.
+            # Works for both HTTP /signal and stdio RPC strategy.signal.
+            model_id = self._get_active_model_id()
+            if not model_id:
+                raise ValueError('ML strategy requires model_id parameter or an active model')
         from training.model_registry import ModelRegistry
         from strategies.ml.features import FeatureBuilder
         self._wrapper, self._model_config = ModelRegistry.load(model_id)
@@ -29,6 +33,22 @@ class MLStrategyBase(StrategyBase):
             return None
         output = self._wrapper.forward(features)
         return self.interpret_output(output, bar, ctx)
+
+    @staticmethod
+    def _get_active_model_id():
+        """Read active model ID from data/models/active.json."""
+        import os, json
+        active_file = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__))))),
+            'data', 'models', 'active.json')
+        if os.path.exists(active_file):
+            try:
+                with open(active_file) as f:
+                    return json.load(f).get('model_id', '')
+            except (json.JSONDecodeError, IOError):
+                pass
+        return ''
 
     def metadata(self):
         meta = super().metadata()

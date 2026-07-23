@@ -62,12 +62,7 @@ def _ensure_loaded():
 def _compute_signal(strategy_name, bars, params, symbol):
     # Compute signal: instantiate strategy, feed bars, return last signal.
     strat_cls = get(strategy_name)
-    # Auto-inject active model_id for ML strategies without explicit model_id
-    if getattr(strat_cls, 'is_ml', False) and not (params or {}).get('model_id'):
-        active_id = _get_active_model_id()
-        if active_id:
-            params = dict(params or {})
-            params['model_id'] = active_id
+    # MLStrategyBase.on_after_init auto-uses active model when no model_id given.
     strat = strat_cls(params or {})
     ctx = Context()
     ctx.symbol = symbol or ''
