@@ -30,7 +30,7 @@ mookquant 是一款基于 **Electron** 的量化投资桌面应用，采用 **MV
 │                 ▼                                                        │
 │  ┌──────────────┬──────────────┬──────────────┬──────────────────┐     │
 │  │ QuoteService │StrategySvc   │BacktestSvc   │ TradeService     │     │
-│  │ ExecutorSvc  │ModelSvc  │ConfigMgr     │LogService    │                  │     │
+│  │ ExecutorSvc  │ ModelSvc    │ConfigMgr     │ LogService       │     │
 │  └──┬───────────┴──────┬───────┴──────┬───────┴────┬─────────────┘     │
 │     ▼                  ▼              ▼             ▼                    │
 │  ┌──────────────────┐ ┌─────────────┐ ┌──────────────────┐              │
@@ -139,6 +139,9 @@ class DataSource {
 
 - `config/default.json`：应用静态配置（窗口尺寸、QMT 连接参数、缓存 TTL、数据源 mode）
 - `data/strategies/<id>.json`：策略定义（StrategyService 管理）
+- `data/models/{model_id}/`：模型文件（meta.json + config.json + model.pt）
+- `data/models/active.json`：激活模型（model_id + strategy）
+- `data/models/index.json`：模型索引
 - `data/logs/...`：执行日志与每日净值（LogService 落盘）
 - `localStorage`（渲染层）：UI 偏好（侧边栏折叠、最近搜索等）
 
@@ -185,59 +188,74 @@ class DataSource {
 mooquant/
 ├── main.js                  # 主进程入口
 ├── preload.js               # contextBridge 注入 facade
-├── config/default.json      # 应用配置
+├── config/default.json      # 应用配置（含 modelServer.port）
 ├── main/
-│   ├── ipc/index.js         # IPC 路由
-│   ├── services/            # 业务服务
+│   ├── ipc/index.js         # IPC 路由（含 model:* 路由）
+│   ├── services/
 │   │   ├── quote-service.js
 │   │   ├── strategy-service.js
 │   │   ├── backtest-service.js
 │   │   ├── trade-service.js
-│   │   ├── executor-service.js    # 策略实盘调度
+│   │   ├── executor-service.js    # 策略实盘调度（HTTP /signal 优先）
+│   │   ├── model-service.js       # 模型服务管理（spawn model_server.py）
 │   │   ├── config-manager.js
 │   │   └── log-service.js
 │   ├── datasources/         # 数据源抽象与实现
-│   │   ├── index.js         # 行情源工厂
-│   │   ├── mock.js          # MockDataSource
-│   │   ├── qmt.js           # QmtDataSource
-│   │   ├── backtest-engine.js    # Python 回测调度
-│   │   └── trade/           # 交易源
-│   │       ├── index.js
-│   │       ├── mock-trade.js
-│   │       └── qmt-trade.js
-│   ├── strategies/
-│   │   └── ma_cross.js      # 示例策略（均线交叉）
+│   │   ├── index.js
+│   │   ├── mock.js
+│   │   ├── qmt.js           # QmtDataSource（stdio JSON-RPC + strategy.* RPC）
+│   │   └── trade/
 │   └── utils/pinyin.js
-├── bridge/                  # Python 子进程桥
-│   ├── qmt_server.py        # stdio JSON-RPC
-│   ├── backtest_engine.py
-│   ├── db.py
-│   ├── model_server.py      # HTTP 模型服务
-   ├── qmt_shell.py         # QMT 壳策略模板
-   ├── strategies/          # 策略框架（含 ML）
-   ├── training/            # 训练管道
-   └── requirements.txt
+├── bridge/                  # Python 子进程
+│   ├── qmt_server.py        # stdio JSON-RPC（行情+策略信号+交易）
+│   ├── model_server.py      # HTTP 模型服务（模型管理+训练+信号计算）
+│   ├── qmt_shell.py         # QMT 壳策略模板
+│   ├── backtest_engine.py   # 回测引擎
+│   ├── db.py                # 本地行情缓存
+│   ├── strategies/          # 策略框架
+│   │   ├── base.py          # StrategyBase + Signal + Context
+│   │   ├── indicators.py    # 技术指标库
+│   │   ├── registry.py      # 自动扫描注册
+│   │   ├── builtin/         # 内置规则策略
+│   │   ├── ml/              # ML 策略
+│   │   │   ├── base.py      # MLStrategyBase（自动使用激活模型）
+│   │   │   ├── features.py  # 特征工程
+│   │   │   ├── models/      # 模型架构（LSTM/Transformer/MLP）
+│   │   │   └── builtin/     # 内置 ML 策略
+│   │   └── exporters/       # 平台导出器
+│   ├── training/            # 训练管道
+│   │   ├── trainer.py       # Trainer（训练循环+早停）
+│   │   ├── dataset.py       # FinancialDataset
+│   │   ├── labels.py        # 标签生成
+│   │   ├── model_registry.py # ModelRegistry（LRU缓存+持久化）
+│   │   ├── pipeline.py      # TrainPipeline（异步训练）
+│   │   └── builtin_models.py # 内置模型
+│   └── requirements.txt
 ├── renderer/                # 渲染层（vite 构建）
 │   ├── index.html
 │   ├── splash.html
-│   ├── css/{base,app}.css
+│   ├── css/{base,app,flatpickr-override}.css
 │   └── js/
-│       ├── main.js          # 入口，连接所有 ViewModel+View
-│       ├── router.js        # 单页路由（hash）
+│       ├── main.js          # 入口
+│       ├── router.js        # 单页路由（7 个页面）
 │       ├── services/facade.js
-│       ├── viewmodels/      # 6 个 VM
-│       ├── views/           # 11 个视图组件
+│       ├── viewmodels/      # 7 个 VM（含 ModelViewModel）
+│       ├── views/           # 12 个视图组件（含 ModelView）
 │       └── utils/pinyin.js
-└── docs/.ai/
-    ├── plan/                # 项目计划文档
-    └── knowledge-library/   # 本知识库
+├── tests/                   # 单元测试（pytest，20 个）
+└── docs/
+    ├── api/                 # API 接口文档（model-server-api.md）
+    ├── third/               # 第三方 API 参考
+    └── .ai/
+        ├── plan/            # 项目计划文档
+        └── knowledge-library/   # 本知识库
 ```
-
----
 
 ## 9. 后续扩展建议
 
 - **多数据源**：在 `datasources/index.js` 注册新工厂分支；接口保持不变
-- **更多策略**：在 `main/strategies/` 新增实现，注册到 `executor-service.js` 的 `SIGNAL_FUNCTIONS`
+- **更多策略**：在 `bridge/strategies/builtin/` 新增 `.py` 自动注册；或通过 UI「编写自定义策略」添加
+- **更多模型架构**：在 `bridge/strategies/ml/models/` 用 `@register_model` 注册新架构
+- **更多 ML 策略**：在 `bridge/strategies/ml/builtin/` 新增，继承 `MLStrategyBase`
 - **替换 UI 框架**：当前 View 层是 vanilla ES6，渐进替换为 Vue/React 不影响主进程与 IPC 协议
 - **跨端**：将渲染层打包为 Web 部署，主进程保留作为桌面端桥（需调整 IPC 通道）

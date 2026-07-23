@@ -25,7 +25,7 @@
 |---|---|
 | 模块系统 | CommonJS（与 Electron 默认一致；无需 ESM/CommonJS 互操作） |
 | 入口 | `main.js` |
-| 进程模型 | 主进程 + 渲染进程（多 BrowserWindow） + Python 子进程 |
+| 进程模型 | 主进程 + 渲染进程 + Python 子进程×2（qmt_server stdio + model_server HTTP） |
 | 配置文件 | `config/default.json`（运行时可写）+ `.env`（敏感信息，gitignore） |
 | 持久化 | JSON 文件（`data/strategies/`、`data/logs/`），无数据库依赖 |
 | 进程间通信 | Electron `ipcMain.handle` / `ipcRenderer.invoke`（请求-响应） + `webContents.send`（主进程推送） |
@@ -49,12 +49,12 @@
 | 样式 | 纯 CSS + CSS 变量；构建后单文件 |
 | 入口 | `renderer/js/main.js`，被 `index.html` 通过 `<script type="module">` 加载 |
 | 状态管理 | 自写极简 MVVM（ViewModel 持 state + `subscribe(fn)` 派发） |
-| 路由 | 自写 hash 路由（`renderer/js/router.js`），6 个页面 |
+| 路由 | 自写 hash 路由（`renderer/js/router.js`），7 个页面 |
 | 跨端兼容 | Facade 双模式：Electron 走 `window.mookquant.facade`；纯浏览器走内置 mock，方便 UI 调试 |
 
 ### 为什么不上 Vue / React？
 
-初版页面少（5 个），自写 MVVM 总代码量 < 100 行；引入框架会把项目撑大。等到页面 > 10 个或需要组件复用时再渐进替换，**架构已留好扩展口**（View 与 ViewModel 边界清晰）。
+初版页面少（7 个），自写 MVVM 总代码量 < 100 行；引入框架会把项目撑大。等到页面 > 10 个或需要组件复用时再渐进替换，**架构已留好扩展口**（View 与 ViewModel 边界清晰）。
 
 ### CSS 变量主题（`renderer/css/base.css`）
 
