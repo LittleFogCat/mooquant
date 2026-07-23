@@ -81,8 +81,19 @@ class MyStrategy(StrategyBase):
     let current = {};
     try { current = JSON.parse(currentParamsStr || "{}"); } catch (e) {}
 
+    const isML = type && type.is_ml;
+    let mlHint = "";
+    if (isML) {
+      const am = state.activeModel;
+      if (am && am.model_id) {
+        mlHint = '<div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text-2)">ML 策略：model_id 留空将自动使用激活模型：<strong style="color:var(--accent-hover)">' + escapeHtml((am.meta && am.meta.name) || am.model_id) + '</strong></div>';
+      } else {
+        mlHint = '<div style="background:rgba(239,68,68,.08);border:1px solid var(--red);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text-2)">ML 策略：未激活模型。请在模型管理页激活一个模型，或在下方填写 model_id。</div>';
+      }
+    }
+
     if (!schema.length) {
-      return '<div class="form-group"><label class="form-label">策略参数 (JSON)</label>' +
+      return mlHint + '<div class="form-group"><label class="form-label">策略参数 (JSON)</label>' +
         '<textarea class="input-field" id="st_params" style="font-family:monospace;font-size:13px;min-height:80px">' + escapeHtml(currentParamsStr) + '</textarea></div>';
     }
 
@@ -107,7 +118,7 @@ class MyStrategy(StrategyBase):
         '<input class="input-field" id="st_param_' + escapeHtml(p.key) + '" type="text" value="' + escapeHtml(String(val)) + '" /></div>' + (p.description ? '<div style="font-size:11px;color:var(--text-3);margin-top:-6px;margin-bottom:8px">' + escapeHtml(p.description) + '</div>' : '');
     }).join("");
 
-    return '<div class="form-group"><label class="form-label">策略参数</label></div>' + fields +
+    return mlHint + '<div class="form-group"><label class="form-label">策略参数</label></div>' + fields +
       '<input type="hidden" id="st_param_keys" value="' + escapeHtml(schema.map((p) => p.key + ":" + p.type).join(",")) + '" />';
   }
 

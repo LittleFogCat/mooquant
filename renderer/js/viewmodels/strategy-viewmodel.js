@@ -16,6 +16,7 @@ class StrategyViewModel {
       editing: null,
       startingId: null,
       startingSymbols: "",
+      activeModel: null,
       error: null,
     };
     this._subs = [];
@@ -44,6 +45,7 @@ class StrategyViewModel {
       this._set({ list: resp.data || [], loading: false });
       await this.loadExecutorStatus();
       await this.loadStrategyTypes();
+      this.loadActiveModel();
     } catch (e) {
       this._set({ loading: false, error: e.message });
     }
@@ -55,6 +57,17 @@ class StrategyViewModel {
       if (!this.facade.strategy || !this.facade.strategy.types) return;
       const resp = await this.facade.strategy.types();
       if (resp.ok && resp.data) this._set({ strategyTypes: resp.data });
+    } catch {}
+  }
+
+  /** 加载当前激活模型（供 ML 策略表单提示） */
+  async loadActiveModel() {
+    try {
+      if (!this.facade.modelServer || !this.facade.modelServer.getActiveModel) return;
+      const resp = await this.facade.modelServer.getActiveModel();
+      if (resp.ok && resp.data) {
+        this._set({ activeModel: resp.data });
+      }
     } catch {}
   }
 
@@ -197,6 +210,7 @@ class StrategyViewModel {
         const resp = await this.facade.strategy.addType({ name: form.customName.trim(), code: form.customCode });
         if (!resp.ok) { this._set({ error: resp.error }); return; }
         await this.loadStrategyTypes();
+      this.loadActiveModel();
         strategyType = form.customName.trim();
       } catch (e) { this._set({ error: e.message }); return; }
     }

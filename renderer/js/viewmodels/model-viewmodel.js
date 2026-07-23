@@ -14,9 +14,6 @@ class ModelViewModel {
       // Models
       models: [],
       modelsLoading: false,
-      // Strategies
-      strategies: [],
-      strategiesLoading: false,
       // Training
       training: { active: false, taskId: null, status: null, progress: 0 },
       trainConfig: {
@@ -69,23 +66,10 @@ class ModelViewModel {
     }
   }
 
-  async loadStrategies() {
-    this._set({ strategiesLoading: true });
-    try {
-      const r = await this.facade.modelServer.listStrategies();
-      this._set({
-        strategies: r.ok ? (r.data || []) : [],
-        strategiesLoading: false,
-      });
-    } catch (e) {
-      this._set({ strategiesLoading: false });
-    }
-  }
-
   async loadAll() {
     await this.loadStatus();
     if (this.state.serviceReady) {
-      await Promise.all([this.loadModels(), this.loadStrategies(), this.loadActiveModel()]);
+      await Promise.all([this.loadModels(), this.loadActiveModel()]);
     }
   }
 

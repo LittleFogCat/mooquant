@@ -164,30 +164,6 @@ function render(root, vm) {
 
       html += '</div>'; // card
 
-      // ---- Strategy list ----
-      html += '<div class="card">';
-      html += '<div class="card-title">\u7b56\u7565\u5217\u8868 (' + state.strategies.length + ')</div>';
-      if (state.strategiesLoading) {
-        html += '<p style="color:var(--text-3)">\u52a0\u8f7d\u4e2d...</p>';
-      } else if (state.strategies.length === 0) {
-        html += '<p style="color:var(--text-3)">\u6682\u65e0\u7b56\u7565</p>';
-      } else {
-        html += '<div class="strategy-list-grid">';
-        for (var si = 0; si < state.strategies.length; si++) {
-          var s = state.strategies[si];
-          var sname = s.name || s.strategy_name || "-";
-          var sdesc = s.description || s.desc || "";
-          var stype = s.type || "";
-          html += '<div class="strategy-item">';
-          html += '<div style="font-weight:600;font-size:14px">' + escapeHtml(sname) + '</div>';
-          if (sdesc) html += '<div style="font-size:12px;color:var(--text-3);margin-top:4px">' + escapeHtml(sdesc) + '</div>';
-          if (stype) html += '<span class="badge badge-active" style="margin-top:6px;display:inline-block">' + escapeHtml(stype) + '</span>';
-          html += '</div>';
-        }
-        html += '</div>';
-      }
-      html += '</div>';
-
     } // end if serviceReady
 
     // ---- Edit modal ----
