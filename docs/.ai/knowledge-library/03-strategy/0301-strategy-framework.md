@@ -39,6 +39,7 @@ bridge/strategies/
 ```
 回测: bars -> registry.get(type)(params) -> 逐 bar on_bar -> Signal -> 撮合
 实盘: executor tick -> K线 -> HTTP /signal（优先）/ RPC strategy.signal（回退）-> 逐 bar on_bar -> Signal -> 下单
+  壳策略(type=shell): executor tick -> K线 -> HTTP /signal（不传 strategy，自动用激活模型）-> Signal -> 下单
 导出: registry.get(type) -> inspect.getsource -> 适配壳包装 -> QMT 脚本
 ```
 

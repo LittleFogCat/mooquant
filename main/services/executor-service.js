@@ -94,12 +94,16 @@ class StrategyExecutor {
       let signal;
       try {
         if (this.modelService) {
-          const result = await this.modelService.computeSignal({
-            strategy: this.strategy.type,
+          const payload = {
             bars,
             params: this.strategy.params || {},
             symbol,
-          });
+          };
+          // Shell strategy: let model server use active model
+          if (this.strategy.type && this.strategy.type !== "shell") {
+            payload.strategy = this.strategy.type;
+          }
+          const result = await this.modelService.computeSignal(payload);
           if (result.ok) {
             signal = result.data;
           } else {

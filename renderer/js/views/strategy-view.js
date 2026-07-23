@@ -8,6 +8,7 @@
 import * as StockSearch from './stock-search.js';
 
 const TYPE_LABELS = {
+    shell: "壳策略",
     ma_cross: "双均线",
     momentum: "动量",
     mean_reversion: "均值回归",
@@ -81,8 +82,18 @@ class MyStrategy(StrategyBase):
     let current = {};
     try { current = JSON.parse(currentParamsStr || "{}"); } catch (e) {}
 
+    const isShell = type && type.is_shell;
     const isML = type && type.is_ml;
     let mlHint = "";
+    if (isShell) {
+      const am = state.activeModel;
+      if (am && am.model_id) {
+        mlHint = '<div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text-2)">壳策略：将自动使用激活模型：<strong style="color:var(--accent-hover)">' + escapeHtml((am.meta && am.meta.name) || am.model_id) + '</strong> 计算信号</div>';
+      } else {
+        mlHint = '<div style="background:rgba(239,68,68,.08);border:1px solid var(--red);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text-2)">壳策略：未激活模型。请先在模型管理页激活一个模型。</div>';
+      }
+      return mlHint;
+    }
     if (isML) {
       const am = state.activeModel;
       if (am && am.model_id) {

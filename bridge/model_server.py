@@ -24,20 +24,34 @@ from training.builtin_models import ensure_builtin_models
 ACTIVE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'models', 'active.json')
 
 
-def _get_active_model_id():
+_ARCH_STRATEGY_MAP = {
+    'lstm': 'lstm_trend',
+}
+
+
+def _get_active_model():
+    """Return active model dict {model_id, strategy} or {}."""
     if os.path.exists(ACTIVE_FILE):
         try:
             with open(ACTIVE_FILE) as f:
-                return json.load(f).get('model_id', '')
+                return json.load(f)
         except (json.JSONDecodeError, IOError):
             pass
-    return ''
+    return {}
 
 
-def _set_active_model_id(model_id):
+def _set_active_model(model_id):
+    """Activate a model. Auto-detects strategy from model arch."""
+    strategy = 'lstm_trend'
+    try:
+        meta = ModelRegistry.get_meta(model_id)
+        arch = meta.get('arch', '')
+        strategy = _ARCH_STRATEGY_MAP.get(arch, 'lstm_trend')
+    except Exception:
+        pass
     os.makedirs(os.path.dirname(ACTIVE_FILE), exist_ok=True)
     with open(ACTIVE_FILE, 'w') as f:
-        json.dump({'model_id': model_id}, f, ensure_ascii=False)
+        json.dump({'model_id': model_id, 'strategy': strategy}, f, ensure_ascii=False)
 
 
 # Global state
@@ -124,15 +138,15 @@ class ModelHandler(BaseHTTPRequestHandler):
         elif path == '/models':
             self._send_json(ModelRegistry.list_models())
         elif path == '/models/active':
-            active_id = _get_active_model_id()
-            if active_id:
+            active = _get_active_model()
+            if active and active.get('model_id'):
                 try:
-                    meta = ModelRegistry.get_meta(active_id)
-                    self._send_json({'model_id': active_id, 'meta': meta})
+                    meta = ModelRegistry.get_meta(active['model_id'])
+                    self._send_json({'model_id': active['model_id'], 'strategy': active.get('strategy', ''), 'meta': meta})
                 except FileNotFoundError:
-                    self._send_json({'model_id': '', 'meta': None})
+                    self._send_json({'model_id': '', 'strategy': '', 'meta': None})
             else:
-                self._send_json({'model_id': '', 'meta': None})
+                self._send_json({'model_id': '', 'strategy': '', 'meta': None})
         elif len(parts) == 2 and parts[0] == 'models':
             try:
                 meta = ModelRegistry.get_meta(parts[1])
@@ -161,8 +175,16 @@ class ModelHandler(BaseHTTPRequestHandler):
             params = body.get('params', {})
             symbol = body.get('symbol', '')
             if not name:
-                self._send_error('Missing strategy name')
-                return
+                # Shell strategy: use active model's strategy
+                active = _get_active_model()
+                if active and active.get('strategy'):
+                    name = active['strategy']
+                    if not (params or {}).get('model_id'):
+                        params = dict(params or {})
+                        params['model_id'] = active.get('model_id', '')
+                else:
+                    self._send_error('No strategy specified and no active model')
+                    return
             if not bars:
                 self._send_error('Missing bars data')
                 return
@@ -192,7 +214,7 @@ class ModelHandler(BaseHTTPRequestHandler):
         elif len(parts) == 3 and parts[0] == 'models' and parts[2] == 'activate':
             model_id = parts[1]
             try:
-                _set_active_model_id(model_id)
+                _set_active_model(model_id)
                 self._send_json({'ok': True, 'model_id': model_id})
             except Exception as e:
                 self._send_error(str(e), 500, 'INTERNAL')

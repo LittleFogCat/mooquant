@@ -64,7 +64,7 @@
 | POST | /models/{id}/activate | 激活模型 |
 | POST | /train | 启动训练（异步） |
 | GET | /train/{id}/status | 查询训练状态 |
-| POST | /signal | 计算策略信号 |
+| POST | /signal | 计算策略信号（不传 strategy 时自动用激活模型） |
 
 ### 配置
 
@@ -164,7 +164,8 @@ class LSTMModel(nn.Module):
 
 模型管理支持「激活」功能，设为默认模型供 ML 策略使用：
 
-- 激活的 model_id 持久化到 `data/models/active.json`
+- 激活的 model_id + 关联策略名持久化到 `data/models/active.json`
+- 激活时根据模型 arch 自动选择策略（lstm -> lstm_trend）
 - `MLStrategyBase.on_after_init` 无显式 model_id 时自动读取激活模型
 - `/signal` 端点和 stdio RPC `strategy.signal` 均通过 MLStrategyBase 统一处理
 - 上层（QMT 壳 / 本地策略执行器）无需关心 model_id，激活即可用
@@ -178,7 +179,8 @@ executor tick -> 获取K线 -> modelService.computeSignal() -> HTTP /signal -> �
                                           ↳ 回退 strategyBridge.strategySignal() -> stdio RPC
 ```
 
-- 优先通过 HTTP 调用模型服务（与 QMT 壳策略走同一条路）
+- 壳策略（type=shell）不传 strategy，模型服务自动用激活模型计算
+- 手写策略传 strategy 名称，模型服务用指定策略计算
 - 模型服务不可用时回退到 QMT 桥 stdio RPC
 - 两条路径调用的是同一个策略类的同一个 `on_bar`
 

@@ -56,7 +56,20 @@ class StrategyViewModel {
     try {
       if (!this.facade.strategy || !this.facade.strategy.types) return;
       const resp = await this.facade.strategy.types();
-      if (resp.ok && resp.data) this._set({ strategyTypes: resp.data });
+      if (resp.ok && resp.data) {
+        const types = resp.data;
+        // Ensure shell strategy is first (default built-in)
+        if (!types.find(t => t.name === 'shell')) {
+          types.unshift({
+            name: 'shell',
+            display_name: '壳策略（使用激活模型）',
+            description: '通过HTTP调用激活模型计算信号',
+            params_schema: [],
+            is_shell: true,
+          });
+        }
+        this._set({ strategyTypes: types });
+      }
     } catch {}
   }
 
@@ -131,7 +144,7 @@ class StrategyViewModel {
 
   startCreate() {
     const types = this.state.strategyTypes || [];
-    const first = types[0] || { name: "ma_cross", params_schema: [] };
+    const first = types[0] || { name: "shell", params_schema: [] };
     const defaultParams = {};
     for (const p of (first.params_schema || [])) defaultParams[p.key] = p.default;
     this._set({
