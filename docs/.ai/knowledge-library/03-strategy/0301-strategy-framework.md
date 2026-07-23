@@ -38,11 +38,15 @@ bridge/strategies/
 
 ```
 回测: bars -> registry.get(type)(params) -> 逐 bar on_bar -> Signal -> 撮合
-实盘: executor tick -> K线 -> RPC strategy.signal -> 逐 bar on_bar -> Signal -> 下单
+实盘: executor tick -> K线 -> HTTP /signal（优先）/ RPC strategy.signal（回退）-> 逐 bar on_bar -> Signal -> 下单
 导出: registry.get(type) -> inspect.getsource -> 适配壳包装 -> QMT 脚本
 ```
 
 三者调用的是**同一个策略类的同一个 on_bar**。
+
+> **ML 策略**：ML 策略（继承 `MLStrategyBase`）在 `on_after_init` 中加载模型。
+> 无显式 `model_id` 时自动使用模型管理中激活的模型，上层无需关心。
+> HTTP `/signal` 和 stdio RPC 两条路径统一由 `MLStrategyBase` 处理激活模型逻辑。
 
 ## 0302 · 策略开发指南
 

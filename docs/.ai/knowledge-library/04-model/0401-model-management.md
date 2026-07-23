@@ -5,7 +5,8 @@
 模型管理是 mooquant 的核心功能之一，负责量化模型的训练、管理和部署。架构设计遵循以下原则：
 
 - **本地聚焦建模**：本地应用负责模型训练和管理，QMT 负责回测/实盘/图表
-- **HTTP 服务暴露**：模型层通过 HTTP 服务暴露给 QMT 壳策略调用
+- **HTTP 服务暴露**：模型层通过 HTTP 服务暴露给上层调用（QMT 壳策略 / 本地策略执行器）
+- **上层解耦**：模型管理不关心上层是 QMT 壳还是本地策略页，统一通过 HTTP /signal 接口消费
 - **PyTorch 实验性**：PyTorch 作为新引入的建模工具，仅为实验性质
 - **接口隔离**：常规量化和机器学习作为底层实现，对上层无感知
 
@@ -58,6 +59,9 @@
 | GET | /models | 列出所有模型 |
 | GET | /models/{id} | 获取模型详情 |
 | DELETE | /models/{id} | 删除模型 |
+| PUT | /models/{id} | 更新模型元数据（名称等） |
+| GET | /models/active | 获取当前激活的模型 |
+| POST | /models/{id}/activate | 激活模型 |
 | POST | /train | 启动训练（异步） |
 | GET | /train/{id}/status | 查询训练状态 |
 | POST | /signal | 计算策略信号 |
@@ -156,11 +160,34 @@ class LSTMModel(nn.Module):
 |------|------|------|
 | lstm_trend | builtin/lstm_trend.py | LSTM 趋势策略 |
 
+## 激活模型
+
+模型管理支持「激活」功能，设为默认模型供 ML 策略使用：
+
+- 激活的 model_id 持久化到 `data/models/active.json`
+- `MLStrategyBase.on_after_init` 无显式 model_id 时自动读取激活模型
+- `/signal` 端点和 stdio RPC `strategy.signal` 均通过 MLStrategyBase 统一处理
+- 上层（QMT 壳 / 本地策略执行器）无需关心 model_id，激活即可用
+
+## 策略执行器集成
+
+本地策略执行器（`executor-service.js`）的信号计算路径：
+
+```
+executor tick -> 获取K线 -> modelService.computeSignal() -> HTTP /signal -> 信号
+                                          ↳ 回退 strategyBridge.strategySignal() -> stdio RPC
+```
+
+- 优先通过 HTTP 调用模型服务（与 QMT 壳策略走同一条路）
+- 模型服务不可用时回退到 QMT 桥 stdio RPC
+- 两条路径调用的是同一个策略类的同一个 `on_bar`
+
 ## QMT 壳策略
 
 `bridge/qmt_shell.py` 是 QMT 客户端中运行的壳策略：
 
 - 固定一份模板，配置区可修改
+- ML 策略无需填 model_id，自动使用激活模型
 - `init`：连接模型服务（HTTP）
 - `handlebar`：每根 bar 通过 HTTP 调用 `/signal` 端点
 - 模型服务返回信号 → 壳策略执行交易
