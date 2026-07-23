@@ -136,6 +136,21 @@ def _is_builtin(name: str) -> bool:
     return os.path.exists(os.path.join(here, "builtin", name + ".py"))
 
 
+def get_strategy_code(name: str) -> str:
+    """Get strategy source code.
+
+    User strategies: read from data/strategies/user/{name}.py.
+    Built-in strategies: use inspect.getsource.
+    """
+    user_path = os.path.join(_user_dir(), name + '.py')
+    if os.path.exists(user_path):
+        with open(user_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    strat_cls = get(name)
+    import inspect
+    return inspect.getsource(strat_cls)
+
+
 def save_strategy(name: str, code: str) -> dict:
     """保存用户策略代码到 data/strategies/user/ 并即时注册。
 

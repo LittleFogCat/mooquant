@@ -25,6 +25,7 @@ const facade = {
     create: (p) => ipcRenderer.invoke("strategy:create", p),
     update: (id, p) => ipcRenderer.invoke("strategy:update", id, p),
     delete: (id) => ipcRenderer.invoke("strategy:delete", id),
+    getCode: (name) => ipcRenderer.invoke("strategy:getCode", name),
     addType: (payload) => ipcRenderer.invoke("strategy:addType", payload),
     deleteType: (payload) => ipcRenderer.invoke("strategy:deleteType", payload),
   },

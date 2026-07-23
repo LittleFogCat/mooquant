@@ -1063,6 +1063,18 @@ def handle_strategy_export(params):
         return {"error": "导出失败: {}".format(e)}
 
 
+def handle_strategy_get_code(params):
+    """???????"""
+    name = (params.get("name") or "").strip()
+    if not name:
+        return {"error": "????? name"}
+    try:
+        code = get_strategy_code(name)
+        return {"code": code}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def handle_strategy_add(params):
     """添加用户自定义策略（写源码到 user/ 目录并即时注册）。
 
@@ -1116,6 +1128,7 @@ METHOD_MAP = {
     "strategy.list": handle_strategy_list,
     "strategy.signal": handle_strategy_signal,
     "strategy.export": handle_strategy_export,
+    "strategy.get_code": handle_strategy_get_code,
     "strategy.add": handle_strategy_add,
     "strategy.delete": handle_strategy_delete,
 }

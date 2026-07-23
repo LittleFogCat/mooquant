@@ -261,6 +261,11 @@ class QmtDataSource {
     return await this._request("strategy.add", { name, code });
   }
 
+  async strategyGetCode({ name }) {
+    if (!this._ready) await this.init();
+    return await this._request("strategy.get_code", { name });
+  }
+
   /**
    * 删除用户策略（仅限 user/ 目录下的）
    */

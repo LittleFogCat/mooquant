@@ -26,6 +26,16 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
         return { ok: true, data: [] };
       } catch (e) { return { ok: false, error: e.message }; }
     });
+    ipcMain.handle("strategy:getCode", async (_e, name) => {
+      try {
+        if (strategyBridge && typeof strategyBridge.strategyGetCode === "function") {
+          const r = await strategyBridge.strategyGetCode({ name });
+          if (r && r.error) return { ok: false, error: r.error };
+          return { ok: true, data: r };
+        }
+        return { ok: false, error: "?? bridge ???" };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
     ipcMain.handle("strategy:addType", async (_e, payload) => {
       try {
         if (strategyBridge && typeof strategyBridge.strategyAdd === "function") {

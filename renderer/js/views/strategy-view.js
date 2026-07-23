@@ -184,6 +184,7 @@ class MyStrategy(StrategyBase):
         '<td>' +
           runBtn + " " +
           '<button class="btn btn-secondary btn-sm" data-action="edit" data-id="' + escapeHtml(s.id) + '">编辑</button> ' +
+          '<button class="btn btn-secondary btn-sm" data-action="duplicate" data-id="' + escapeHtml(s.id) + '">复制</button> ' +
           '<button class="btn btn-secondary btn-sm" data-action="export" data-id="' + escapeHtml(s.id) + '">导出</button> ' +
           '<button class="btn btn-danger btn-sm" data-action="delete" data-id="' + escapeHtml(s.id) + '">删除</button>' +
         '</td>' +
@@ -239,6 +240,12 @@ class MyStrategy(StrategyBase):
           '<textarea class="input-field" id="st_desc" placeholder="策略描述...">' + escapeHtml(e.description) + '</textarea></div>' +
         paramsHtml +
         renderRiskForm(e.risk) +
+        (isCustom ? '' :
+          '<details class="form-group" style="margin-top:12px"><summary class="form-label" style="cursor:pointer">策略源码（可直接编辑）</summary>' +
+          '<textarea class="input-field" id="st_code" style="font-family:monospace;font-size:12px;min-height:280px;white-space:pre;resize:vertical;margin-top:8px" placeholder="加载中...">' + escapeHtml(e.code || '') + '</textarea>' +
+          '<input type="hidden" id="st_original_code" value="' + escapeHtml(e.originalCode || '') + '" />' +
+          '<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">修改源码后保存将更新策略类型，不影响已有实例。</div>' +
+          '</details>') +
         '<div class="modal-actions">' +
           '<button class="btn btn-secondary" data-action="cancel">取消</button>' +
           '<button class="btn btn-primary" data-action="save">保存</button>' +
@@ -313,6 +320,8 @@ class MyStrategy(StrategyBase):
         return JSON.stringify(risk);
       })(),
       customMode: customMode,
+      code: (function() { var el = document.getElementById("st_code"); return el ? el.value : ""; })(),
+      originalCode: (function() { var el = document.getElementById("st_original_code"); return el ? el.value : ""; })(),
     };
     if (customMode) {
       form.customName = document.getElementById("st_custom_name").value;
@@ -378,6 +387,7 @@ class MyStrategy(StrategyBase):
             vm.cancelStart();
           }
           else if (action === "stop") vm.stopExecution(id);
+          else if (action === "duplicate") vm.duplicate(id);
           else if (action === "export") vm.exportStrategy(id);
           else if (action === "close-export") vm.closeExport();
           else if (action === "copy-export") {

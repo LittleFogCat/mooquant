@@ -99,6 +99,7 @@ if (window.mookquant && window.mookquant.facade) { return window.mookquant.facad
     list: async () => ({ ok: true, data: _strats }),
     types: async () => ({ ok: true, data: _strategyTypes }),
     export: async () => ({ ok: false, error: "浏览器模式不支持策略导出" }),
+    getCode: async () => ({ ok: true, data: { code: "# 浏览器模式不支持查看源码" } }),
     addType: async () => ({ ok: false, error: "浏览器模式不支持添加策略" }),
     deleteType: async () => ({ ok: false, error: "浏览器模式不支持删除策略" }),
     get: async (id) => ({ ok: true, data: _strats.find(s => s.id === id) }),

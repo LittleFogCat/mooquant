@@ -160,9 +160,12 @@ class StrategyViewModel {
         customName: "",
         customDisplayName: "",
         customCode: "",
+        code: "",
+        originalCode: "",
       },
       error: null,
     });
+    this.loadEditingCode(first.name);
   }
 
   /** 切换「自定义策略」编辑模式 */
@@ -179,6 +182,7 @@ class StrategyViewModel {
     const defaultParams = {};
     for (const p of ((type && type.params_schema) || [])) defaultParams[p.key] = p.default;
     this._set({ editing: { ...this.state.editing, type: typeName, customMode: false, params: JSON.stringify(defaultParams, null, 2) } });
+    this.loadEditingCode(typeName);
   }
 
   startEdit(strategy) {
@@ -191,13 +195,51 @@ class StrategyViewModel {
         params: JSON.stringify(strategy.params || {}, null, 2),
         risk: JSON.stringify(strategy.risk || {}, null, 2),
         status: strategy.status,
+        code: "",
+        originalCode: "",
       },
       error: null,
     });
+    this.loadEditingCode(strategy.type);
+  }
+
+  async loadEditingCode(typeName) {
+    if (!typeName || typeName === "__custom__") return;
+    try {
+      if (!this.facade.strategy || !this.facade.strategy.getCode) return;
+      const resp = await this.facade.strategy.getCode(typeName);
+      if (resp.ok && resp.data) {
+        this._set({ editing: { ...this.state.editing, code: resp.data.code || "", originalCode: resp.data.code || "" } });
+      }
+    } catch {}
   }
 
   cancelEdit() {
     this._set({ editing: null, error: null });
+  }
+
+  duplicate(id) {
+    const s = this.state.list.find((x) => x.id === id);
+    if (!s) return;
+    this._set({
+      editing: {
+        id: null,
+        name: s.name + " (副本)",
+        description: s.description || "",
+        type: s.type,
+        params: JSON.stringify(s.params || {}, null, 2),
+        risk: JSON.stringify(s.risk || {}, null, 2),
+        status: "draft",
+        customMode: false,
+        customName: "",
+        customDisplayName: "",
+        customCode: "",
+        code: "",
+        originalCode: "",
+      },
+      error: null,
+    });
+    this.loadEditingCode(s.type);
   }
 
   async save(form) {
@@ -214,8 +256,16 @@ class StrategyViewModel {
       this._set({ error: "风控参数 JSON 解析失败: " + e.message });
       return;
     }
-    // 自定义策略：先注册类型，再创建实例
+    // 如果源码被修改，更新策略源码
     let strategyType = form.type;
+    if (form.code && form.originalCode && form.code !== form.originalCode && !form.customMode) {
+      try {
+        const resp = await this.facade.strategy.addType({ name: strategyType, code: form.code });
+        if (!resp.ok) { this._set({ error: "策略源码更新失败: " + resp.error }); return; }
+        await this.loadStrategyTypes();
+      } catch (e) { this._set({ error: e.message }); return; }
+    }
+    // 自定义策略：先注册类型，再创建实例
     if (form.customMode && !form.id) {
       if (!form.customName || !form.customName.trim()) { this._set({ error: "策略类型名不能为空" }); return; }
       if (!form.customCode || !form.customCode.trim()) { this._set({ error: "策略代码不能为空" }); return; }
