@@ -1,7 +1,0 @@
-feat(strategy): 策略源码编辑与复制功能
-
-- 所有策略均可编辑源码，保存时更新原策略类型（非新建）
-- 新增复制按钮，复制当前策略实例
-- 后端: registry.get_strategy_code + qmt_server strategy.get_code RPC
-- 前端: 源码编辑区(details折叠) + duplicate事件 + collectForm收集code/originalCode
-- facade mock: 添加 getCode
