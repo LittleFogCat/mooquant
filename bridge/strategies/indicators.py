@@ -54,13 +54,16 @@ def macd(closes: List[float], fast: int = 12, slow: int = 26,
     dif_valid = [d for d in dif[first_valid:] if d is not None]
     dea_valid = ema(dif_valid, signal) if len(dif_valid) >= signal else [None] * len(dif_valid)
     pad = len(dif) - len(dea_valid)
-    dea = [None] * pad + dea_valid if pad >= 0 else dea_valid[-len(dif):]
+    dea = ([None] * pad + dea_valid) if pad >= 0 else dea_valid[-len(dif):]
     hist = [None if (d is None or e is None) else 2 * (d - e) for d, e in zip(dif, dea)]
     return dif, dea, hist
 
 
 def rsi(closes: List[float], period: int = 14) -> List[Optional[float]]:
-    """RSI 相对强弱指标（Wilder 平滑）。"""
+    """RSI 相对强弱指标（Wilder 平滑）。
+
+    首值用前 period 内简单平均初始化（SMA），后续用 Wilder 递推平滑。
+    """
     n = len(closes)
     result: List[Optional[float]] = [None] * n
     if n <= period:

@@ -51,5 +51,4 @@ def tmp_model_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(model_registry, 'MODEL_DIR', str(tmp_path / 'models'))
     # Clear cache
     model_registry.ModelRegistry._cache.clear()
-    model_registry.ModelRegistry._cache_order.clear()
     return str(tmp_path / 'models')

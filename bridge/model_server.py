@@ -26,6 +26,8 @@ ACTIVE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 
 _ARCH_STRATEGY_MAP = {
     'lstm': 'lstm_trend',
+    'mlp': 'mlp_classifier',
+    'transformer': 'transformer_trend',
 }
 
 

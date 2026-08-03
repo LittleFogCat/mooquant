@@ -29,6 +29,7 @@ import os as _os_mod
 # SQLite cache module (same directory)
 sys.path.insert(0, _os_mod.path.dirname(_os_mod.path.abspath(__file__)))
 import db as db_cache
+from _shared import generate_mock_bars as _generate_mock_bars
 
 # 策略框架（回测与实盘共用同一份策略代码）
 from strategies.registry import load_all, get as get_strategy, list_strategies, save_strategy, delete_strategy
@@ -304,37 +305,6 @@ def handle_quote_snapshot(params):
         "turnover": round(amount, 2),
         "timestamp": ts_iso,
     }
-
-
-def _generate_mock_bars(code, count):
-    import random, time, math
-    from datetime import datetime, timedelta
-    seed_val = sum(ord(c) for c in code) + 42
-    rng = random.Random(seed_val)
-    base_price = 50 + rng.random() * 200
-    n = min(count if count > 0 else 60, 500)
-    bars = []
-    price = base_price
-    now = datetime.now()
-    for i in range(n):
-        ret = rng.gauss(0, 0.02)
-        open_p = price
-        close_p = price * (1 + ret)
-        high_p = max(open_p, close_p) * (1 + abs(rng.gauss(0, 0.008)))
-        low_p = min(open_p, close_p) * (1 - abs(rng.gauss(0, 0.008)))
-        vol = int(rng.uniform(500000, 5000000))
-        dt = now - timedelta(days=n - 1 - i)
-        bars.append({
-            "time": int(dt.timestamp()),
-            "date": dt.strftime("%Y-%m-%d"),
-            "open": round(open_p, 2),
-            "high": round(high_p, 2),
-            "low": round(low_p, 2),
-            "close": round(close_p, 2),
-            "volume": vol,
-        })
-        price = close_p
-    return bars
 
 
 def _format_date_str(s):
@@ -1096,10 +1066,10 @@ def handle_strategy_export(params):
 
 
 def handle_strategy_get_code(params):
-    """???????"""
+    """获取策略源码"""
     name = (params.get("name") or "").strip()
     if not name:
-        return {"error": "????? name"}
+        return {"error": "缺少参数 name"}
     try:
         code = get_strategy_code(name)
         return {"code": code}

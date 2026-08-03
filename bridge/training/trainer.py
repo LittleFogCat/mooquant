@@ -150,13 +150,14 @@ class Trainer:
         model = build_model(model_arch, model_params)
 
         # 6. Training loop
-        device = torch.device('cpu')
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         model.to(device)
         criterion = torch.nn.CrossEntropyLoss() if is_classification else torch.nn.MSELoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5, factor=0.5)
 
         best_val_loss = float('inf')
+        best_train_loss = 0.0
         best_state = None
         no_improve = 0
         train_log = []
@@ -188,6 +189,7 @@ class Trainer:
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
+                best_train_loss = train_loss
                 best_state = {k: v.clone() for k, v in model.state_dict().items()}
                 no_improve = 0
             else:
@@ -200,7 +202,7 @@ class Trainer:
             model.load_state_dict(best_state)
 
         metrics = {
-            'train_loss': train_log[-1]['train_loss'] if train_log else 0,
+            'train_loss': round(best_train_loss, 6) if train_log else 0,
             'val_loss': round(best_val_loss, 6),
             'n_samples': n,
         }

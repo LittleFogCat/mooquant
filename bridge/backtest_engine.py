@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from strategies.registry import load_all, get as get_strategy
 from strategies.base import Context
 import db as db_cache
+from _shared import to_xtcode as _to_xtcode, generate_mock_bars
 
 
 # ----------------------------------------------------------------------
@@ -59,72 +60,8 @@ def reply(obj):
 # 模拟历史数据生成（无 xtquant 时的回退方案）
 # 用确定性随机游走生成日 K 线，确保回测可运行
 # ----------------------------------------------------------------------
-def generate_mock_bars(symbol, start_date, end_date):
-    """生成模拟日 K 线数据"""
-    from datetime import datetime, timedelta
-
-    start = datetime.strptime(start_date, "%Y-%m-%d")
-    end = datetime.strptime(end_date, "%Y-%m-%d")
-
-    # 用 symbol 做种子，保证同标的每次生成一致
-    seed_val = sum(ord(c) for c in symbol) + 42
-    rng = random.Random(seed_val)
-
-    base_price = 50 + rng.random() * 200
-    bars = []
-    current = start
-    price = base_price
-
-    while current <= end:
-        # 跳过周末
-        if current.weekday() < 5:
-            daily_return = rng.gauss(0, 0.02)  # 日波动 2%
-            open_price = price
-            close_price = price * (1 + daily_return)
-            high_price = max(open_price, close_price) * (1 + abs(rng.gauss(0, 0.008)))
-            low_price = min(open_price, close_price) * (1 - abs(rng.gauss(0, 0.008)))
-            volume = int(rng.uniform(500000, 5000000))
-
-            bars.append({
-                "date": current.strftime("%Y-%m-%d"),
-                "open": round(open_price, 2),
-                "high": round(high_price, 2),
-                "low": round(low_price, 2),
-                "close": round(close_price, 2),
-                "volume": volume,
-            })
-            price = close_price
-        current += timedelta(days=1)
-
-    return bars
-
-
 # 技术指标与策略实现已迁移至 strategies 包（base/indicators/builtin），
 # 回测与实盘共用同一份策略代码，详见 bridge/strategies/
-
-
-def _to_xtcode(raw):
-    """将 UI 代码转换为 xtquant 标准格式: sh600036 -> 600036.SH"""
-    s = (raw or "").strip()
-    if not s:
-        return ""
-    lower = s.lower()
-    if "." in lower:
-        head, _, tail = lower.partition(".")
-        return head.upper() + "." + tail.upper()
-    if lower.startswith("sh"):
-        return lower[2:].upper() + ".SH"
-    if lower.startswith("sz"):
-        return lower[2:].upper() + ".SZ"
-    if lower.startswith("bj"):
-        return lower[2:].upper() + ".BJ"
-    if lower.isdigit() and len(lower) == 6:
-        f = lower[0]
-        if f in ("6", "9", "5"):
-            return lower + ".SH"
-        if f in ("0", "2", "3"):
-            return lower + ".SZ"
-    return s.upper()
 
 
 def _merge_bars(bars):
@@ -356,7 +293,9 @@ def run_backtest(params):
     dividend_type = params.get("dividendType", "front")
     period = params.get("period", "1d")
 
-    symbol = symbols[0]  # 当前支持单标的
+    if len(symbols) > 1:
+        raise ValueError("当前仅支持单标的回测，多标的请使用 PortfolioSignal 组合策略")
+    symbol = symbols[0]
     stock_name = _fetch_stock_name(symbol)
 
     # 优先使用 xtquant 真实数据，失败时回退到模拟数据

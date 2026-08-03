@@ -4,6 +4,7 @@ import os
 import json
 import time
 import threading
+from collections import OrderedDict
 
 
 class ModelWrapper:
@@ -36,8 +37,7 @@ MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
 
 
 class ModelRegistry:
-    _cache = {}
-    _cache_order = []
+    _cache = OrderedDict()  # model_id -> (wrapper, config), LRU ordered
     _cache_max = 10
     _lock = threading.Lock()
 
@@ -76,33 +76,37 @@ class ModelRegistry:
 
     @classmethod
     def load(cls, model_id):
+        # Fast path: cache hit (O(1) move_to_end under lock)
         with cls._lock:
             if model_id in cls._cache:
-                cls._cache_order.remove(model_id)
-                cls._cache_order.append(model_id)
+                cls._cache.move_to_end(model_id)
                 return cls._cache[model_id]
-            mdir = os.path.join(MODEL_DIR, model_id)
-            if not os.path.exists(mdir):
-                raise FileNotFoundError(model_id)
-            with open(os.path.join(mdir, 'config.json')) as f:
-                config = json.load(f)
-            # Dummy models do not need torch
-            if config.get('model_type') == 'dummy':
-                wrapper = DummyModelWrapper()
-            else:
-                arch = config.get('model_arch', '')
-                params = config.get('model_params', {})
-                from strategies.ml.models.registry import build_model
-                model = build_model(arch, params)
-                import torch
-                model.load_state_dict(torch.load(
-                    os.path.join(mdir, 'model.pt'), weights_only=True))
-                wrapper = TorchModelWrapper(model)
+        # Slow path: load from disk WITHOUT holding lock (avoid blocking)
+        mdir = os.path.join(MODEL_DIR, model_id)
+        if not os.path.exists(mdir):
+            raise FileNotFoundError(model_id)
+        with open(os.path.join(mdir, 'config.json')) as f:
+            config = json.load(f)
+        # Dummy models do not need torch
+        if config.get('model_type') == 'dummy':
+            wrapper = DummyModelWrapper()
+        else:
+            arch = config.get('model_arch', '')
+            params = config.get('model_params', {})
+            from strategies.ml.models.registry import build_model
+            model = build_model(arch, params)
+            import torch
+            model.load_state_dict(torch.load(
+                os.path.join(mdir, 'model.pt'), weights_only=True))
+            wrapper = TorchModelWrapper(model)
+        # Write back to cache (double-check under lock)
+        with cls._lock:
+            if model_id in cls._cache:
+                cls._cache.move_to_end(model_id)
+                return cls._cache[model_id]
             cls._cache[model_id] = (wrapper, config)
-            cls._cache_order.append(model_id)
-            if len(cls._cache_order) > cls._cache_max:
-                old = cls._cache_order.pop(0)
-                del cls._cache[old]
+            if len(cls._cache) > cls._cache_max:
+                cls._cache.popitem(last=False)  # O(1) LRU eviction
             return (wrapper, config)
 
     @classmethod
@@ -146,9 +150,7 @@ class ModelRegistry:
             mdir = os.path.join(MODEL_DIR, model_id)
             if os.path.exists(mdir):
                 shutil.rmtree(mdir)
-            if model_id in cls._cache:
-                del cls._cache[model_id]
-                cls._cache_order.remove(model_id)
+            cls._cache.pop(model_id, None)  # safe, no ValueError
             cls._update_index()
             return True
 

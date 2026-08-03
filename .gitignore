@@ -26,6 +26,7 @@ npm-debug.log*
 # 临时/调试文件（下划线开头的脚本/输出）
 _*.js
 _*.py
+!bridge/_shared.py
 _*.out
 *.tmp
 .cache/

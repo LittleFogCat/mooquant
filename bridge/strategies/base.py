@@ -13,6 +13,7 @@ mookquant * 策略基类、信号模型、上下文对象
 """
 
 from dataclasses import dataclass, field
+from types import ModuleType
 from typing import Optional, List, Dict, Any
 
 
@@ -79,9 +80,9 @@ class Context:
 
     def __init__(self):
         self.bars: List[dict] = []          # 当前标的历史K线（到当前bar为止）
-        self.position: Any = None           # 当前持仓对象
-        self.account: Any = None            # 资金对象
-        self.indicators: Any = None         # 指标库引用（通常为 indicators 模块）
+        self.position: Optional[object] = None    # 当前持仓对象（平台特定）
+        self.account: Optional[object] = None     # 资金对象（平台特定）
+        self.indicators: Optional[ModuleType] = None  # 指标库引用
         self.is_backtest: bool = False      # 是否回测模式（对应 QMT do_back_test）
         self.barpos: int = 0                # 当前bar索引（对应 QMT barpos）
         self.symbol: str = ""               # 当前标的
