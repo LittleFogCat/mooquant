@@ -101,9 +101,8 @@ class ModelHandler(BaseHTTPRequestHandler):
         body = json.dumps(data, ensure_ascii=False).encode('utf-8')
         self.send_response(code)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        # S6: 不发送 CORS 头。正常调用方为本地 Python 脚本和 Electron 主进程代理，
+        # 均非浏览器，不受同源策略限制。移除通配符可阻止恶意网页跨域访问。
         self.end_headers()
         self.wfile.write(body)
 

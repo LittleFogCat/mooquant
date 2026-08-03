@@ -508,7 +508,7 @@ def run_backtest(params):
             if dd < max_dd:
                 max_dd = dd
     if max_dd < -100:
-        max_dd = -100
+        log("warning: max_dd {:.2f}% is abnormal (should be >= -100%), check data integrity".format(max_dd))
 
     # 夏普比率（简化：用日收益率）
     daily_returns = []

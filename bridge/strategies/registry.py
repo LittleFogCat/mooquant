@@ -10,6 +10,8 @@ mookquant * 策略自动注册
 
 import os
 import sys
+import ast
+import time
 import importlib
 import importlib.util
 import inspect
@@ -121,6 +123,46 @@ def _user_dir() -> str:
     return os.path.abspath(os.path.join(here, "..", "..", "data", "strategies", "user"))
 
 
+_DANGEROUS_MODULES = frozenset({
+    'os', 'sys', 'subprocess', 'shutil', 'ctypes', 'socket',
+    'pickle', 'threading', 'multiprocessing', 'signal',
+    'importlib', 'builtins', 'runpy', 'webbrowser', 'code',
+})
+
+
+def _validate_strategy_code(code: str) -> None:
+    """AST 静态检查：禁止导入危险模块，防止任意代码执行。
+
+    仅在 save_strategy（用户通过 UI 提交代码）时调用，
+    不影响已存在的用户策略文件加载。
+
+    Args:
+        code: 策略 Python 源码
+
+    Raises:
+        ValueError: 代码包含危险 import 或存在语法错误
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        raise ValueError("strategy code syntax error: {}".format(e))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split('.')[0]
+                if root in _DANGEROUS_MODULES:
+                    raise ValueError(
+                        "import of '{}' is blocked (security restriction)".format(
+                            alias.name))
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                root = node.module.split('.')[0]
+                if root in _DANGEROUS_MODULES:
+                    raise ValueError(
+                        "import from '{}' is blocked (security restriction)".format(
+                            node.module))
+
+
 def _is_valid_name(name: str) -> bool:
     """校验策略名：合法标识符，不以数字开头，仅字母/数字/下划线。"""
     if not name or not isinstance(name, str):
@@ -173,6 +215,7 @@ def save_strategy(name: str, code: str) -> dict:
         raise ValueError("策略名只能包含字母、数字、下划线，且不能以数字开头: " + str(name))
     if _is_builtin(name):
         raise ValueError("不能覆盖内置策略: " + name)
+    _validate_strategy_code(code)
 
     udir = _user_dir()
     os.makedirs(udir, exist_ok=True)
@@ -220,7 +263,12 @@ def delete_strategy(name: str) -> bool:
     fpath = os.path.join(_user_dir(), name + ".py")
     if not os.path.exists(fpath):
         raise ValueError("用户策略不存在: " + name)
-    os.remove(fpath)
+    # 软删除：移到 .trash 目录而非直接删除，可恢复
+    import shutil
+    trash_dir = os.path.join(_user_dir(), ".trash")
+    os.makedirs(trash_dir, exist_ok=True)
+    trash_name = "{}_{}.py".format(name, int(time.time()))
+    shutil.move(fpath, os.path.join(trash_dir, trash_name))
     _REGISTRY.pop(name, None)
     sys.modules.pop("strategies.user." + name, None)
     return True
