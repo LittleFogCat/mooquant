@@ -1,4 +1,4 @@
-﻿"""
+"""
 mookquant * QMT 策略导出器（适配壳包装模式）
 
 将 mookquant 策略导出为可在 QMT 客户端运行的单文件脚本。
@@ -28,6 +28,12 @@ _TEMPLATE = """#coding:gbk
 import pandas as pd
 import numpy as np
 from typing import List, Optional, Tuple
+
+# QMT passorder 常量（参考 xtconstant，避免 magic number）
+_OP_BUY = 23       # xtconstant.STOCK_BUY
+_OP_SELL = 24      # xtconstant.STOCK_SELL
+_ORDER_TYPE = 1101  # 股票账户单边双向
+_PRICE_LATEST = 5   # xtconstant.LATEST_PRICE
 
 # ============================================================
 # 第一部分：框架兼容层（使策略类脱离 mookquant 包也能定义运行）
@@ -97,16 +103,22 @@ class _Ctx:
             for h in holdings:
                 if h.m_strInstrumentID + '.' + h.m_strExchangeID == symbol:
                     hold_vol = h.m_nVolume
-            data = self._ci.get_market_data_ex(['close'], [symbol], count=1)
-            price = float(data[symbol]['close'].iloc[-1]) if symbol in data else 0
+            # S4: 实盘下单价取 tick 最新价（非 K 线收盘价），减少滑点
+            tick_data = xtdata.get_full_tick([symbol])
+            tick = tick_data.get(symbol, {}) if tick_data else {}
+            price = float(tick.get('lastPrice', 0)) if tick else 0
+            if price <= 0:
+                # tick 不可用时回退到最近 K 线收盘价
+                data = self._ci.get_market_data_ex(['close'], [symbol], count=1)
+                price = float(data[symbol]['close'].iloc[-1]) if symbol in data else 0
             if price <= 0:
                 return
             target_qty = int((avail + hold_vol * price) * percent / price / 100) * 100
             delta = target_qty - hold_vol
             if delta > 0:
-                passorder(23, 1101, self._accid, symbol, 5, -1, delta, self._ci)
+                passorder(_OP_BUY, _ORDER_TYPE, self._accid, symbol, _PRICE_LATEST, -1, delta, self._ci)
             elif delta < 0:
-                passorder(24, 1101, self._accid, symbol, 5, -1, -delta, self._ci)
+                passorder(_OP_SELL, _ORDER_TYPE, self._accid, symbol, _PRICE_LATEST, -1, -delta, self._ci)
 
     def get_position(self, symbol):
         holdings = get_trade_detail_data(self._accid, 'stock', 'position')

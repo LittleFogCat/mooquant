@@ -349,6 +349,10 @@ def run_backtest(params):
     initial_capital = float(params.get("initialCapital", 1000000))
     commission_rate = float(params.get("commission", 0.0003))
     slippage_rate = float(params.get("slippage", 0.001))
+    stamp_tax = float(params.get("stampTax", 0.0005))        # M2: 印花税（卖出收取）
+    transfer_fee = float(params.get("transferFee", 0.00001))  # M2: 过户费（双向收取）
+    buy_cost_rate = commission_rate + transfer_fee
+    sell_cost_rate = commission_rate + stamp_tax + transfer_fee
     dividend_type = params.get("dividendType", "front")
     period = params.get("period", "1d")
 
@@ -416,7 +420,7 @@ def run_backtest(params):
             if target_qty > position:
                 delta = target_qty - position
                 price = bar["close"] * (1 + slippage_rate)
-                cost = price * delta * (1 + commission_rate)
+                cost = price * delta * (1 + buy_cost_rate)
                 if cost <= cash and delta > 0:
                     cash -= cost
                     if position == 0:
@@ -430,7 +434,7 @@ def run_backtest(params):
             elif target_qty < position:
                 delta = position - target_qty
                 price = bar["close"] * (1 - slippage_rate)
-                proceeds = price * delta * (1 - commission_rate)
+                proceeds = price * delta * (1 - sell_cost_rate)
                 pnl = proceeds - cost_price * delta
                 cash += proceeds
                 position = target_qty
@@ -443,9 +447,9 @@ def run_backtest(params):
         # 执行交易信号（buy/sell，与改造前撮合逻辑完全一致）
         elif action == "buy" and position == 0:
             price = bar["close"] * (1 + slippage_rate)
-            max_qty = int(cash / (price * (1 + commission_rate)) / 100) * 100
+            max_qty = int(cash / (price * (1 + buy_cost_rate)) / 100) * 100
             if max_qty > 0:
-                cost = price * max_qty * (1 + commission_rate)
+                cost = price * max_qty * (1 + buy_cost_rate)
                 cash -= cost
                 position = max_qty
                 cost_price = price
@@ -461,7 +465,7 @@ def run_backtest(params):
 
         elif action == "sell" and position > 0:
             price = bar["close"] * (1 - slippage_rate)
-            proceeds = price * position * (1 - commission_rate)
+            proceeds = price * position * (1 - sell_cost_rate)
             pnl = proceeds - position * cost_price
             cash += proceeds
             trades.append({
