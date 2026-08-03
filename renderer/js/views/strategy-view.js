@@ -65,6 +65,17 @@ class MyStrategy(StrategyBase):
     }[c]));
   }
 
+  /** 获取模型展示名：优先 name，unnamed 时 fallback 到 arch+日期，最后 model_id */
+  function modelDisplayName(am) {
+    if (!am) return "";
+    if (am.meta && am.meta.name && am.meta.name !== "unnamed") return am.meta.name;
+    if (am.meta && am.meta.arch) {
+      var ts = (am.meta.created_at || "").slice(0, 10);
+      return am.meta.arch + (ts ? " \u00b7 " + ts : "");
+    }
+    return am.model_id || "";
+  }
+
   /** 从 state.strategyTypes 取展示名，fallback 到 TYPE_LABELS */
   function getTypeLabel(state, type) {
     const t = (state.strategyTypes || []).find((x) => x.name === type);
@@ -88,7 +99,7 @@ class MyStrategy(StrategyBase):
     if (isShell) {
       const am = state.activeModel;
       if (am && am.model_id) {
-        mlHint = '<div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text-2)">壳策略：将自动使用激活模型：<strong style="color:var(--accent-hover)">' + escapeHtml((am.meta && am.meta.name) || am.model_id) + '</strong> 计算信号</div>';
+        mlHint = '<div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text-2)">壳策略：将自动使用激活模型：<strong style="color:var(--accent-hover)">' + escapeHtml(modelDisplayName(am)) + '</strong> 计算信号</div>';
       } else {
         mlHint = '<div style="background:rgba(239,68,68,.08);border:1px solid var(--red);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text-2)">壳策略：未激活模型。请先在模型管理页激活一个模型。</div>';
       }
@@ -97,7 +108,7 @@ class MyStrategy(StrategyBase):
     if (isML) {
       const am = state.activeModel;
       if (am && am.model_id) {
-        mlHint = '<div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text-2)">ML 策略：model_id 留空将自动使用激活模型：<strong style="color:var(--accent-hover)">' + escapeHtml((am.meta && am.meta.name) || am.model_id) + '</strong></div>';
+        mlHint = '<div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text-2)">ML 策略：model_id 留空将自动使用激活模型：<strong style="color:var(--accent-hover)">' + escapeHtml(modelDisplayName(am)) + '</strong></div>';
       } else {
         mlHint = '<div style="background:rgba(239,68,68,.08);border:1px solid var(--red);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text-2)">ML 策略：未激活模型。请在模型管理页激活一个模型，或在下方填写 model_id。</div>';
       }

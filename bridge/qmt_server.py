@@ -208,6 +208,7 @@ def handle_quote_snapshot(params):
       code: str   UI 代码（sh600519 / sz000001 / 600519.SH）
       port: int   miniQMT 端口（默认 58610）
     """
+    global _CONNECTED
     code = to_xtcode(params.get("code", ""))
     if not code:
         raise ValueError("code 不能为空")
@@ -220,6 +221,37 @@ def handle_quote_snapshot(params):
 
     tick_data = xt.get_full_tick([code])
     tick = tick_data.get(code) or {}
+
+    # tick 为空时可能是连接状态失效，重置并重试一次
+    if not tick:
+        log("tick empty, reconnecting miniQMT (port={})...".format(port))
+        _CONNECTED = False
+        ensure_connected(port)
+        tick_data = xt.get_full_tick([code])
+        tick = tick_data.get(code) or {}
+
+    # 仍未获取到 tick，尝试用最近 K 线收盘价构建快照
+    if not tick:
+        try:
+            kline = xt.get_market_data_ex(
+                ['close', 'open', 'high', 'low', 'volume'],
+                [code], period='1d', count=1)
+            if code in kline and len(kline[code]) > 0:
+                row = kline[code].iloc[-1]
+                tick = {
+                    'lastPrice': float(row.get('close', 0) or 0),
+                    'open': float(row.get('open', 0) or 0),
+                    'high': float(row.get('high', 0) or 0),
+                    'low': float(row.get('low', 0) or 0),
+                    'lastClose': float(row.get('preClose', 0) or 0),
+                    'volume': float(row.get('volume', 0) or 0),
+                    'amount': 0,
+                    'time': int(time.time()),
+                }
+                log("using K-line fallback for {}".format(code))
+        except Exception as e:
+            log("K-line fallback failed: {}".format(e))
+
     if not tick:
         raise RuntimeError("未找到该标的或数据为空: " + code)
 
