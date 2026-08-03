@@ -40,6 +40,7 @@ data/*.db-wal
 data/*.db-shm
 
 # 运行时数据（日志/回测结果/策略配置/交易记录）
+logs/
 data/logs/
 data/backtest_results/
 data/equity/

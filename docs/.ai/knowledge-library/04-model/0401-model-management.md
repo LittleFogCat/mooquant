@@ -71,6 +71,14 @@
 - 端口：默认 8765，通过 `MODEL_SERVER_PORT` 环境变量或 `config/default.json` 的 `modelServer.port` 配置
 - 依赖：Python stdlib（http.server），零外部依赖（torch 为可选依赖）
 
+### 安全措施
+
+| 措施 | 说明 |
+|------|------|
+| CORS 收紧 | 不发送 `Access-Control-Allow-Origin` 头，阻止恶意网页跨域访问本地 8765 端口。正常调用方（Python 脚本、Electron 主进程代理）不受同源策略限制 |
+| 策略 AST 检查 | `save_strategy` 在写入/执行用户代码前，通过 AST 静态分析禁止导入危险模块（`os`/`subprocess`/`shutil`/`socket`/`pickle`/`ctypes` 等）。仅作用于新提交代码，不影响已加载策略 |
+| 策略软删除 | `delete_strategy` 将文件移到 `data/strategies/user/.trash/` 而非直接删除，可恢复误删 |
+
 ## 模型架构
 
 ### 注册表模式
@@ -126,6 +134,18 @@ class LSTMModel(nn.Module):
 | classification | 未来 N 根 bar 收益率 > 阈值 → 买入；< -阈值 → 卖出 |
 | regression | 未来 N 根 bar 收益率（连续值） |
 | triple_barrier | 三重障碍法（止盈/止损/时间止损） |
+
+### 特征-标签对齐（消除 look-ahead bias）
+
+`FinancialDataset` 中特征与标签的对齐约定：
+
+- `X[i]` 的特征窗口为 `bars[i : i+window]`，窗口右端 = `i+window-1`
+- `labels[j]` 是从 `closes[j]` 出发预测 `closes[j+horizon]` 的收益
+- **X[i] 应配 `labels[i+window-1]`**（从窗口右端出发），而非 `labels[i]`
+- 推理时 `build()` 取 `matrix[-window:]`（右端=len-1），对应 `labels[len-1]`，训练与推理对齐一致
+- 时序训练使用 `shuffle=False`，避免相邻窗口样本混入验证集
+
+> 修改 `dataset.py` 对齐逻辑时务必同步更新 `tests/training/test_dataset.py` 中的对齐测试。
 
 ## 模型注册表
 
@@ -239,13 +259,14 @@ executor tick -> 获取K线 -> modelService.computeSignal() -> HTTP /signal -> �
 
 | 测试文件 | 测试内容 |
 |----------|----------|
-| tests/features/test_features.py | 特征工程（4 个测试） |
-| tests/models/test_models.py | 模型前向传播（3 个测试） |
-| tests/strategies/test_registry.py | 策略注册（3 个测试） |
+| tests/features/test_features.py | 特征工程（5 个测试） |
+| tests/models/test_models.py | 模型前向传播（6 个测试） |
+| tests/strategies/test_registry.py | 策略注册 + 安全检查（8 个测试） |
 | tests/strategies/test_ma_cross.py | MA 交叉策略（1 个测试） |
 | tests/training/test_labels.py | 标签生成（3 个测试） |
 | tests/training/test_model_registry.py | 模型注册表（3 个测试） |
 | tests/training/test_trainer.py | 训练器（1 个测试） |
+| tests/training/test_dataset.py | 特征-标签对齐（2 个测试） |
 | tests/test_integration.py | 端到端集成（2 个测试） |
 
-共 20 个单元测试，全部通过。
+共 31 个单元测试，全部通过。
