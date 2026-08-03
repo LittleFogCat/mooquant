@@ -19,3 +19,19 @@ def test_build_batch(sample_bars):
 def test_insufficient_bars():
     fb = FeatureBuilder({'window': 20, 'normalize_window': 20})
     assert fb.build([{'close': 1}]) is None
+
+def test_n_features_multi_indicator():
+    """L8: n_features should count multi-column indicators (macd/boll/kdj each = 3)"""
+    fb = FeatureBuilder({
+        'window': 10,
+        'raw_features': ['close', 'volume'],
+        'indicators': [
+            {'name': 'macd', 'params': {}},
+            {'name': 'boll', 'params': {}},
+            {'name': 'kdj', 'params': {}},
+        ],
+        'derived': ['return_1d'],
+        'normalize': 'zscore', 'normalize_window': 10,
+    })
+    # 2 raw + 3(macd) + 3(boll) + 3(kdj) + 1 derived = 12
+    assert fb.n_features == 12

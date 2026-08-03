@@ -17,16 +17,22 @@ class FinancialDataset(Dataset):
             if X is None:
                 continue
             labels = label_fn(bars, **label_params)
-            # Align: X samples = len(bars) - window - norm_window + 1
-            # labels length = len(bars) - horizon
-            n = min(len(X), len(labels))
+            # 对齐约定（消除 look-ahead bias）：
+            #   X[i] 特征窗口为 bars[i : i+window]，窗口右端 = i+window-1
+            #   labels[j] 是从 closes[j] 出发预测 closes[j+horizon] 的收益
+            #   因此 X[i] 应配 labels[i + window - 1]（从窗口右端出发）
+            #   推理时 build() 取 matrix[-window:]（右端=len-1），对应 labels[len-1]
+            #   训练与推理对齐一致
+            offset = feature_builder.window - 1
+            n = min(len(X), len(labels) - offset)
             if n <= 0:
                 continue
             self.X_list.append(X[:n])
-            if isinstance(labels[0], float):
-                self.y_list.append(torch.tensor(labels[:n], dtype=torch.float32))
+            paired = labels[offset:offset + n]
+            if isinstance(paired[0], float):
+                self.y_list.append(torch.tensor(paired, dtype=torch.float32))
             else:
-                self.y_list.append(torch.tensor(labels[:n], dtype=torch.long))
+                self.y_list.append(torch.tensor(paired, dtype=torch.long))
 
         if self.X_list:
             self.X = torch.cat(self.X_list, dim=0)

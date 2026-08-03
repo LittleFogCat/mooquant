@@ -5,6 +5,7 @@ import sys
 import json
 import math
 import random
+import time
 
 
 # --- DataFetcher interface (dependency injection for testability) ---
@@ -88,7 +89,12 @@ class Trainer:
         model_arch = config.get('model_arch', 'lstm')
         model_params = config.get('model_params', {})
         train_cfg = config.get('train_config', {})
-        model_name = config.get('model_name', 'unnamed')
+        model_name = (config.get('model_name', '') or '').strip()
+        if not model_name:
+            # 自动生成有意义的默认名：架构_日期时间
+            model_name = '{}_{}'.format(
+                config.get('model_arch', 'model'),
+                time.strftime('%Y%m%d_%H%M%S'))
 
         symbols = data_cfg.get('symbols', ['600036.SH'])
         period = data_cfg.get('period', '1d')
@@ -131,7 +137,7 @@ class Trainer:
         n_train = n - n_val
         train_ds = torch.utils.data.Subset(dataset, range(n_train))
         val_ds = torch.utils.data.Subset(dataset, range(n_train, n))
-        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=False)
         val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
         # 5. Build model

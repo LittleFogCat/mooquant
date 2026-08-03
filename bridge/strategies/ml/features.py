@@ -29,7 +29,8 @@ class FeatureBuilder:
 
     @property
     def n_features(self) -> int:
-        return len(self.raw_features) + len(self.indicators) + len(self.derived)
+        # 按 _column_order 实际展开长度计算（macd/boll/kdj 各贡献多列）
+        return len(self._column_order())
 
     def _extract_raw(self, bars):
         cols = {}

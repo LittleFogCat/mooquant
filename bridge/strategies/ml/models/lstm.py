@@ -33,4 +33,7 @@ class LSTMModel(nn.Module):
         logits = self.fc(last)
         if self.task == 'classification':
             return logits
-        return logits.squeeze(-1)
+        # 回归任务：仅单输出时 squeeze，避免多输出回归维度错误
+        if logits.shape[-1] == 1:
+            return logits.squeeze(-1)
+        return logits
