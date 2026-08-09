@@ -2,10 +2,12 @@
 # Exposes model layer via HTTP for QMT shell strategy and local UI.
 # Uses Python stdlib http.server - zero external dependencies.
 
+import ast
 import json
 import os
 import sys
 import threading
+from collections import OrderedDict
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
@@ -29,6 +31,45 @@ _ARCH_STRATEGY_MAP = {
     'mlp': 'mlp_classifier',
     'transformer': 'transformer_trend',
 }
+
+
+# S6: strategy source code safety check
+_DANGEROUS_MODULES = frozenset({
+    'os', 'subprocess', 'shutil', 'socket', 'ctypes',
+    'multiprocessing', 'pickle', 'marshal', 'importlib',
+})
+_DANGEROUS_BUILTINS = frozenset({
+    '__import__', 'eval', 'exec', 'compile', 'open',
+    'globals', 'locals', 'vars',
+})
+
+
+def _check_code_safety(code_str):
+    """AST static check: block dangerous imports and builtin calls.
+
+    Returns (is_safe, reason). reason describes violation when is_safe=False.
+    """
+    try:
+        tree = ast.parse(code_str)
+    except SyntaxError as e:
+        return False, 'Syntax error: {}'.format(e)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split('.')[0]
+                if root in _DANGEROUS_MODULES:
+                    return False, 'Forbidden import: {}'.format(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                root = node.module.split('.')[0]
+                if root in _DANGEROUS_MODULES:
+                    return False, 'Forbidden import from: {}'.format(node.module)
+        elif isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id in _DANGEROUS_BUILTINS:
+                return False, 'Forbidden call: {}()'.format(func.id)
+    return True, ''
 
 
 def _get_active_model():
@@ -75,17 +116,56 @@ def _ensure_loaded():
         _strategies_loaded = True
 
 
-def _compute_signal(strategy_name, bars, params, symbol):
-    # Compute signal: instantiate strategy, feed bars, return last signal.
+# M8: strategy instance pool (avoid re-instantiating + model loading per /signal)
+_strategy_pool = OrderedDict()   # (strategy_name, model_id) -> (strat, ctx)
+_strategy_pool_max = 10
+_strategy_pool_lock = threading.Lock()
+
+
+def _get_strategy_instance(strategy_name, params):
+    """Get or create a strategy instance from pool (thread-safe).
+
+    key = (strategy_name, params.get('model_id', ''))
+    Cache hit: reuse instance, reset internal state.
+    Cache miss: create and initialize (outside lock to avoid blocking).
+    """
+    model_id = (params or {}).get('model_id', '')
+    key = (strategy_name, model_id)
+
+    with _strategy_pool_lock:
+        if key in _strategy_pool:
+            _strategy_pool.move_to_end(key)
+            strat, ctx = _strategy_pool[key]
+            strat._state = {}
+            return strat, ctx
+
+    # Cache miss: create new instance (outside lock)
     strat_cls = get(strategy_name)
-    # MLStrategyBase.on_after_init auto-uses active model when no model_id given.
     strat = strat_cls(params or {})
     ctx = Context()
-    ctx.symbol = symbol or ''
     ctx.is_backtest = False
     ctx.period = '1d'
     strat.on_init(ctx)
     strat.on_after_init(ctx)
+
+    with _strategy_pool_lock:
+        if key in _strategy_pool:
+            _strategy_pool.move_to_end(key)
+            strat, ctx = _strategy_pool[key]
+            strat._state = {}
+            return strat, ctx
+        _strategy_pool[key] = (strat, ctx)
+        if len(_strategy_pool) > _strategy_pool_max:
+            _strategy_pool.popitem(last=False)
+        return strat, ctx
+
+
+def _compute_signal(strategy_name, bars, params, symbol):
+    # M8: use strategy instance pool to avoid repeated instantiation + model loading
+    strat, ctx = _get_strategy_instance(strategy_name, params)
+    ctx.symbol = symbol or ''
+    ctx.bars = []
+    ctx.barpos = 0
     signal = None
     for i, bar in enumerate(bars):
         ctx.bars = bars[:i + 1]
@@ -93,7 +173,7 @@ def _compute_signal(strategy_name, bars, params, symbol):
         signal = strat.on_bar(bar, ctx)
     strat.on_stop(ctx)
     if signal is None:
-        return {'action': 'hold', 'reason': '\u65e0\u4fe1\u53f7'}
+        return {'action': 'hold', 'reason': '无信号'}
     return signal.to_dict()
 
 
@@ -202,6 +282,11 @@ class ModelHandler(BaseHTTPRequestHandler):
             code = body.get('code', '')
             if not name or not code:
                 self._send_error('Missing name or code')
+                return
+            # S6: AST static safety check
+            is_safe, reason = _check_code_safety(code)
+            if not is_safe:
+                self._send_error('Strategy code safety check failed: ' + reason, 403, 'FORBIDDEN')
                 return
             try:
                 meta = save_strategy(name, code)

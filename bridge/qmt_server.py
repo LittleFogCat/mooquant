@@ -29,7 +29,7 @@ import os as _os_mod
 # SQLite cache module (same directory)
 sys.path.insert(0, _os_mod.path.dirname(_os_mod.path.abspath(__file__)))
 import db as db_cache
-from _shared import generate_mock_bars as _generate_mock_bars
+from _shared import generate_mock_bars as _generate_mock_bars, to_xtcode
 
 # 策略框架（回测与实盘共用同一份策略代码）
 from strategies.registry import load_all, get as get_strategy, list_strategies, save_strategy, delete_strategy
@@ -137,43 +137,6 @@ def ensure_connected(port=58610):
 # ----------------------------------------------------------------------
 # 代码转换工具
 # ----------------------------------------------------------------------
-def to_xtcode(raw):
-    """
-    将 UI 代码转换为 xtquant 标准格式：
-      sh600519 / 600519.SH -> 600519.SH
-      sz000001           -> 000001.SZ
-      bj830xxx           -> 830xxx.BJ
-      AAPL               -> AAPL.US
-    """
-    s = (raw or "").strip()
-    if not s:
-        return ""
-
-    lower = s.lower()
-    if "." in lower:
-        head, _, tail = lower.partition(".")
-        return head.upper() + "." + tail.upper()
-
-    if lower.startswith("sh"):
-        return lower[2:].upper() + ".SH"
-    if lower.startswith("sz"):
-        return lower[2:].upper() + ".SZ"
-    if lower.startswith("bj"):
-        return lower[2:].upper() + ".BJ"
-
-    if lower.isdigit() and len(lower) == 6:
-        f = lower[0]
-        if f in ("6", "9", "5"):
-            return lower + ".SH"
-        if f in ("0", "2", "3"):
-            return lower + ".SZ"
-        return lower + ".SH"
-
-    if lower.isalpha():
-        return lower.upper() + ".US"
-
-    return lower.upper()
-
 
 def from_xtcode(xtcode):
     """600519.SH -> ('600519', 'sh', '上海', 'CNY')"""
@@ -457,7 +420,7 @@ def _aggregate_minutes(bars, n):
 def handle_quote_history(params):
     code = to_xtcode(params.get("code", ""))
     if not code:
-        raise ValueError("code \u4e0d\u80fd\u4e3a\u7a7a")
+        raise ValueError("code 不能为空")
     period = params.get("period", "1d")
     count = int(params.get("count", -1))
     port = int(params.get("port", 58610))

@@ -73,8 +73,8 @@ def _place_order(ContextInfo, side):
             print('[shell] ACCOUNT not configured, skipping order')
             return
         if side == 'buy':
-            xttrader.order_stock(ACCOUNT, SYMBOL, xtconstant.STOCK_BUY, 100, xtconstant.FIX_PRICE, 0)
+            xttrader.order_stock(ACCOUNT, SYMBOL, xtconstant.STOCK_BUY, 100, xtconstant.LATEST_PRICE, -1)
         else:
-            xttrader.order_stock(ACCOUNT, SYMBOL, xtconstant.STOCK_SELL, 100, xtconstant.FIX_PRICE, 0)
+            xttrader.order_stock(ACCOUNT, SYMBOL, xtconstant.STOCK_SELL, 100, xtconstant.LATEST_PRICE, -1)
     except Exception as e:
         print('[shell] order failed:', e)

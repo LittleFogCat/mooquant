@@ -27,6 +27,7 @@ def to_xtcode(raw):
             return lower + ".SH"
         if f in ("0", "2", "3"):
             return lower + ".SZ"
+        return lower + ".SH"  # 未知首字符兜底（如 1/4/7/8）
     if lower.isalpha():
         return lower.upper() + ".US"
     return s.upper()
