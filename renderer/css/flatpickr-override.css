@@ -12,7 +12,7 @@ span.flatpickr-weekday{background:var(--bg-1);color:var(--text-3);fill:var(--tex
 .flatpickr-day.prevMonthDay,.flatpickr-day.nextMonthDay{color:var(--text-3)}
 .flatpickr-day.today{border-color:var(--accent)}
 .flatpickr-day.today:hover{background:var(--accent-dim);border-color:var(--accent)}
-.flatpickr-day.selected,.flatpickr-day.selected:hover{background:var(--accent);border-color:var(--accent);color:#fff}
+.flatpickr-day.selected,.flatpickr-day.selected:hover{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
 .flatpickr-day.inRange{background:var(--accent-dim);border-color:var(--accent-dim)}
 .flatpickr-monthDropdown-months{background:var(--bg-2);color:var(--text-1)}
 .flatpickr-monthDropdown-month{background:var(--bg-2)}

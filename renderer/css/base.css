@@ -1,1 +1,147 @@
-*{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}:root{--bg-0:#0a0a0f;--bg-1:#12121a;--bg-2:#1a1a25;--bg-3:#22222e;--text-1:#e8e8ed;--text-2:#9a9aa8;--text-3:#5a5a68;--accent:#6366f1;--accent-hover:#818cf8;--accent-dim:rgba(99,102,241,.15);--green:#22c55e;--red:#ef4444;--orange:#f59e0b;--border:rgba(255,255,255,.06);--border-hover:rgba(255,255,255,.12);--glass-bg:rgba(26,26,37,.7);--glass-border:rgba(255,255,255,.08);--shadow-sm:0 2px 8px rgba(0,0,0,.2);--shadow-md:0 8px 32px rgba(0,0,0,.3);--shadow-lg:0 16px 48px rgba(0,0,0,.4);--radius-sm:8px;--radius-md:12px;--radius-lg:20px;--transition:all .2s cubic-bezier(.4,0,.2,1)}html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,SF Pro Display,Helvetica Neue,PingFang SC,Microsoft YaHei,sans-serif;color:var(--text-1);background:var(--bg-0);overflow-x:hidden}.background-gradient{position:fixed;inset:0;z-index:-1;background:radial-gradient(ellipse at 20% 0%,rgba(99,102,241,.08) 0%,transparent 50%),radial-gradient(ellipse at 80% 100%,rgba(168,85,247,.06) 0%,transparent 50%),var(--bg-0)}::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px}::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.2)}
+/* mookquant - ChatGPT style theme system
+   Light mode (default) + Dark mode via [data-theme="dark"]
+   Black/white/gray palette, no brand color */
+
+:root {
+  /* Background layers (light mode) */
+  --bg-0: #ffffff;
+  --bg-1: #f9f9f9;
+  --bg-2: #f5f5f5;
+  --bg-3: #ececec;
+
+  /* Text layers */
+  --text-1: #0d0d0d;
+  --text-2: #5d5d5d;
+  --text-3: #8e8e8e;
+
+  /* Accent (ChatGPT uses black/gray, not brand color) */
+  --accent: #0d0d0d;
+  --accent-hover: #2d2d2d;
+  --accent-dim: rgba(0, 0, 0, 0.06);
+  --accent-fg: #ffffff;
+
+  /* Market colors (red up / green down for CN market) */
+  --green: #22c55e;
+  --red: #ef4444;
+  --orange: #f59e0b;
+
+  /* Borders */
+  --border: rgba(0, 0, 0, 0.08);
+  --border-hover: rgba(0, 0, 0, 0.15);
+
+  /* Card / glass (solid, no blur in ChatGPT style) */
+  --glass-bg: #ffffff;
+  --glass-border: rgba(0, 0, 0, 0.08);
+
+  /* Shadows (soft) */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.10);
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  /* Transition */
+  --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Titlebar height */
+  --titlebar-h: 40px;
+}
+
+[data-theme="dark"] {
+  --bg-0: #212121;
+  --bg-1: #171717;
+  --bg-2: #2f2f2f;
+  --bg-3: #3d3d3d;
+
+  --text-1: #ececec;
+  --text-2: #b4b4b4;
+  --text-3: #8e8e8e;
+
+  --accent: #ececec;
+  --accent-hover: #ffffff;
+  --accent-dim: rgba(255, 255, 255, 0.08);
+  --accent-fg: #171717;
+
+  --green: #22c55e;
+  --red: #ef4444;
+  --orange: #f59e0b;
+
+  --border: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.15);
+
+  --glass-bg: #2f2f2f;
+  --glass-border: rgba(255, 255, 255, 0.08);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "SF Pro Display",
+    "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--text-1);
+  background: var(--bg-0);
+  overflow: hidden;
+}
+
+/* Background: solid, no gradient (ChatGPT style) */
+.background-gradient {
+  display: none;
+}
+
+/* Titlebar drag region: transparent, blends into background */
+.titlebar-drag-region {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--titlebar-h);
+  -webkit-app-region: drag;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+/* Scrollbar: minimal */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; }
+  50% { box-shadow: 0 0 0 6px transparent; }
+}

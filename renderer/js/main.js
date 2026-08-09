@@ -168,5 +168,34 @@ safe('侧边栏折叠', () => {
   });
 });
 
+// ---- 主题切换 ----
+safe('主题切换', () => {
+  const THEME_KEY = 'mookquant.theme';
+  const html = document.documentElement;
+  const toggle = document.getElementById('themeToggle');
+  const span = toggle ? toggle.querySelector('span') : null;
+  const iconSun = toggle ? toggle.querySelector('.icon-sun') : null;
+  const iconMoon = toggle ? toggle.querySelector('.icon-moon') : null;
+
+  function applyTheme(theme) {
+    html.setAttribute('data-theme', theme);
+    if (span) span.textContent = theme === 'dark' ? '深色模式' : '浅色模式';
+    if (iconSun) iconSun.style.display = theme === 'dark' ? 'none' : '';
+    if (iconMoon) iconMoon.style.display = theme === 'dark' ? '' : 'none';
+  }
+
+  const saved = localStorage.getItem(THEME_KEY) || 'light';
+  applyTheme(saved);
+
+  if (toggle) {
+    toggle.addEventListener('click', () => {
+      const current = html.getAttribute('data-theme') || 'light';
+      const next = current === 'light' ? 'dark' : 'light';
+      applyTheme(next);
+      localStorage.setItem(THEME_KEY, next);
+    });
+  }
+});
+
 Router.init();
 console.log("[main] 应用初始化完成");

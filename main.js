@@ -61,7 +61,7 @@ function createSplashWindow() {
     width: 360, height: 200,
     frame: false, resizable: false, movable: true,
     transparent: false,
-    backgroundColor: "#0a0a0f",
+    backgroundColor: "#ffffff",
     show: true,
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
@@ -83,8 +83,10 @@ function createWindow(config) {
   mainWindow = new BrowserWindow({
     width: win.width || 1100, height: win.height || 760,
     minWidth: 860, minHeight: 600, show: false,
-    backgroundColor: "#0a0a0f",
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    backgroundColor: "#ffffff",
+    titleBarStyle: "hidden",
+    titleBarOverlay: process.platform === "win32" ? { color: "rgba(0,0,0,0)", symbolColor: "#0d0d0d", height: 40 } : undefined,
+    trafficLightPosition: process.platform === "darwin" ? { x: 16, y: 18 } : undefined,
     trafficLightPosition: process.platform === "darwin" ? { x: 16, y: 18 } : undefined,
     title: "mookquant",
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: false, webSecurity: true },
@@ -96,14 +98,8 @@ function createWindow(config) {
 }
 
 function buildMenu() {
-  const isMac = process.platform === "darwin";
-  const template = [
-    ...(isMac ? [{ label: app.getName(), submenu: [{ role: "about" }, { type: "separator" }, { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit" }] }] : []),
-    { label: "编辑", submenu: [{ role: "undo" }, { role: "redo" }, { type: "separator" }, { role: "cut" }, { role: "copy" }, { role: "paste" }] },
-    { label: "视图", submenu: [{ role: "reload" }, { role: "forceReload" }, { role: "toggleDevTools" }, { type: "separator" }, { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { type: "separator" }, { role: "togglefullscreen" }] },
-    { label: "窗口", submenu: [{ role: "minimize" }, { role: "close" }] },
-  ];
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  // Hide menu bar (ChatGPT style: no menu bar)
+  Menu.setApplicationMenu(null);
 }
 
 app.disableHardwareAcceleration();
