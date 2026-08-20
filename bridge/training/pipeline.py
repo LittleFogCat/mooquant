@@ -28,7 +28,7 @@ class TrainPipeline:
         # Start training in background. Returns task_id.
         task_id = 'train_' + str(int(time.time() * 1000))
         with self._lock:
-            self._tasks[task_id] = {'status': 'running', 'progress': 0}
+            self._tasks[task_id] = {'status': 'running', 'progress': 0, 'stage': 'init'}
             self._cleanup_tasks()
         thread = threading.Thread(target=self._run, args=(task_id, config), daemon=True)
         thread.start()
@@ -37,12 +37,13 @@ class TrainPipeline:
     def _run(self, task_id, config):
         try:
             from training.trainer import Trainer
-            trainer = Trainer()
+            trainer = Trainer(on_progress=lambda p, s: self._update(task_id, p, s))
             result = trainer.train(config)
             with self._lock:
                 self._tasks[task_id] = {
                     'status': 'done',
                     'progress': 100,
+                    'stage': 'done',
                     'result': result,
                 }
         except Exception as e:
@@ -51,9 +52,17 @@ class TrainPipeline:
                 self._tasks[task_id] = {
                     'status': 'error',
                     'progress': 0,
+                    'stage': 'error',
                     'error': str(e),
                     'traceback': traceback.format_exc(),
                 }
+
+    def _update(self, task_id, progress, stage):
+        # 实时进度写入（训练完成后 done 会覆盖为 100）
+        with self._lock:
+            if task_id in self._tasks and self._tasks[task_id].get('status') == 'running':
+                self._tasks[task_id]['progress'] = int(progress)
+                self._tasks[task_id]['stage'] = stage
 
     def get_status(self, task_id):
         with self._lock:

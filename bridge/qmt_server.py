@@ -37,7 +37,10 @@ from strategies.base import Context
 
 # 启动时预加载所有策略（重启加载模式；热加载后续增强）
 try:
-    load_all()
+    load_all()  # 含 ML 策略（registry 统一扫描 strategies/ml/builtin）
+    import strategies.ml.models  # noqa: F401 注册模型结构
+except ImportError as _e:
+    sys.stderr.write('[qmt] ML strategy preload skipped: %s\n' % _e)
 except Exception as _e:
     sys.stderr.write('[qmt] strategy preload failed: %s\n' % _e)
 

@@ -75,6 +75,26 @@ def _load_builtin(builtin_dir: str):
             traceback.print_exc(file=sys.stderr)
 
 
+def _load_ml_builtin(ml_builtin_dir: str):
+    """加载 strategies/ml/builtin/ 下的 ML 策略（作为 strategies.ml.builtin.xxx 导入）。"""
+    if not os.path.isdir(ml_builtin_dir):
+        return
+    _ensure_bridge_in_path()
+    for fname in sorted(os.listdir(ml_builtin_dir)):
+        if not fname.endswith(".py") or fname.startswith("_"):
+            continue
+        modname = fname[:-3]
+        full = "strategies.ml.builtin." + modname
+        try:
+            importlib.import_module(full)
+            mod = sys.modules[full]
+            _collect_and_register(mod, modname)
+        except Exception as e:
+            sys.stderr.write("[registry] load ml builtin {} failed: {}\n".format(full, e))
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+
+
 def _load_user(user_dir: str):
     """加载用户策略目录（用 spec_from_file_location，不依赖包路径）。"""
     if not os.path.isdir(user_dir):
@@ -107,12 +127,19 @@ def _collect_and_register(mod, modname: str):
 
 
 def load_all() -> List[str]:
-    """加载所有策略：先 builtin 再 user。返回已注册策略名列表。"""
+    """加载所有策略：先 builtin、ml builtin 再 user。返回已注册策略名列表。
+
+    ML 策略（strategies/ml/builtin/）也在这里统一注册，各入口（回测引擎、
+    qmt 桥、模型服务）无需再手动 import；每次调用都会重新扫描注册，
+    保证持久进程多次 load_all() 后 ML 策略不丢失。
+    """
     _REGISTRY.clear()
     here = os.path.dirname(os.path.abspath(__file__))
     builtin_dir = os.path.join(here, "builtin")
+    ml_builtin_dir = os.path.join(here, "ml", "builtin")
     user_dir = os.path.join(here, "..", "..", "data", "strategies", "user")
     _load_builtin(builtin_dir)
+    _load_ml_builtin(ml_builtin_dir)
     _load_user(os.path.abspath(user_dir))
     return list(_REGISTRY.keys())
 

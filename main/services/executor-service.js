@@ -96,10 +96,11 @@ class StrategyExecutor {
         if (this.modelService) {
           const payload = {
             bars,
-            params: this.strategy.params || {},
+            params: { ...(this.strategy.params || {}) },
             symbol,
           };
-          // Shell strategy: let model server use active model
+          if (this.strategy.modelId) payload.params.model_id = this.strategy.modelId;
+          // Shell strategy: let model server resolve strategy from bound/active model
           if (this.strategy.type && this.strategy.type !== "shell") {
             payload.strategy = this.strategy.type;
           }
@@ -113,10 +114,12 @@ class StrategyExecutor {
             return;
           }
         } else if (this.strategyBridge && this.strategyBridge.strategySignal) {
+          const rpcParams = { ...(this.strategy.params || {}) };
+          if (this.strategy.modelId) rpcParams.model_id = this.strategy.modelId;
           signal = await this.strategyBridge.strategySignal({
             type: this.strategy.type,
             bars,
-            params: this.strategy.params || {},
+            params: rpcParams,
             symbol,
           });
         } else {

@@ -21,10 +21,15 @@ class BacktestService {
     return this._engine;
   }
 
-  async run({ strategyId, symbols, startDate, endDate, initialCapital, commission, slippage, dividendType, period }) {
+  async run({ strategyId, modelId, symbols, startDate, endDate, initialCapital, commission, slippage, dividendType, period }) {
     // 加载策略
     const strategy = await this.strategyService.getById(strategyId);
     if (!strategy) return { ok: false, error: "策略不存在: " + strategyId };
+
+    // 模型优先级：回测显式指定 > 策略实例绑定 > ML 策略内部回退激活模型
+    const params = { ...(strategy.params || {}) };
+    const boundModel = modelId || strategy.modelId || "";
+    if (boundModel) params.model_id = boundModel;
 
     // 标的与策略解耦：回测时由调用方指定
     const symbolList = (symbols || [])
@@ -38,7 +43,7 @@ class BacktestService {
     const result = await engine.run({
       strategy: {
         type: strategy.type,
-        params: strategy.params,
+        params,
       },
       symbols: symbolList,
       startDate,

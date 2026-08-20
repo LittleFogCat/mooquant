@@ -5,10 +5,11 @@
 # Works with both rule-based and ML strategies transparently.
 
 import json
+import os
 import requests
 
 # === Configuration (modify as needed) ===
-SERVER_URL = 'http://127.0.0.1:8765'
+SERVER_URL = 'http://127.0.0.1:' + os.environ.get('MODEL_SERVER_PORT', '8766')
 STRATEGY = 'ma_cross'       # Strategy type name (e.g. ma_cross, momentum, lstm_trend)
 PARAMS = {}                   # Strategy params (override defaults)
                               # For ML strategies (e.g. lstm_trend), model_id is auto-filled
