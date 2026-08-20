@@ -11,6 +11,27 @@
 
 ---
 
+## 应用外壳与窗口控制
+
+> 应用采用 Electron `titleBarStyle: "hidden"` 自定义标题栏，布局为“左侧实心侧边栏 + 右侧悬浮主内容卡片”，窗口控制按钮（最小化/最大化/关闭）由渲染层通过 `facade.window.*` 驱动。
+
+### 布局（`renderer/css/app.css`）
+
+| 区域 | 样式 | 说明 |
+|---|---|---|
+| 标题栏 `.titlebar` | `position: fixed; top:0; height:var(--titlebar-h); background:transparent`；`.titlebar-left` 也不设背景 | 承载 logo、折叠按钮与窗口控制按钮；完全透明，依赖下方侧边栏与背景透出，融入布局 |
+| 侧边栏 `.sidebar` | 文档流内 flex 子项，`width:260px; height:100%; background:transparent; border-right:none; padding-top:var(--titlebar-h)`，透明融入背景 | 无自身背景色；顶部留出标题栏高度，避免导航与 logo 重叠；折叠后 `width:64px`，与标题栏左侧同步 |
+| 主内容 `.content-area` | `flex:1; background:var(--bg-0); margin:calc(var(--titlebar-h) + 16px) 0 0 16px; border-top-left-radius; box-shadow` | 悬浮卡片，顶部避开标题栏，右/下贴紧窗口边界，仅左上圆角 |
+
+### 窗口控制（最大化/还原）
+
+- 渲染层 `renderer/js/main.js` 的“窗口控制”块只注册**一次**按钮事件（勿重复粘贴，否则每次点击触发两次 IPC toggle）。
+- 点击最大化按钮 → `facade.window.maximize()` → IPC `window:maximize` 先算目标态再 `maximize()/unmaximize()` 并**返回目标态**（`maximize/unmaximize` 是异步原生操作，调用后立即 `isMaximized()` 可能读到旧值）。
+- 主进程 `main.js` 监听 `maximize`/`unmaximize` 事件，通过 `window:maximizeChanged` 推送状态；启动即最大化时用 `setTimeout` 补发一次，避免渲染层订阅前错过事件。
+- 渲染层通过 `facade.window.onMaximizeChange(updateMaxIcon)` 与 `isMaximized()` 同步图标（最大化=还原图标，还原=最大化图标）。
+
+---
+
 ## 组件清单
 
 | 组件 | 文件 | 职责 |
@@ -107,6 +128,14 @@ const QUICK_TAGS = [
 - `Enter`：选中当前项触发 `onSelect(stock)`
 - `Esc`：隐藏下拉
 - 失焦：延迟 200ms 隐藏（避免点击下拉时被收起）
+
+### 多选模式（multi）
+
+`mount(input, facade, onSelect, onInput, { multi: true })` 时支持「标签式多选」：选中一只股票后以 `, ` 逗号追加到输入框，`getCurrentTerm()` 提取逗号后的当前词做联想、`getPrefix()` 保留前缀。用于回测标的、模型训练标的、策略启停标的等需要多标的的场景。
+
+### 表单字段说明图标（.form-hint）
+
+`.form-label` 尾部可附 `<span class="form-hint" tabindex="0" data-tip="...">?</span>`，渲染为**圆形轮廓问号角标**（12px 小圆 + `vertical-align: super` 上标，不参与文字行高），hover/聚焦时以 `::after` 伪元素弹出 `data-tip` 内容（意义/用途/范围说明）。悬浮时不改鼠标指针（无 `cursor`，保持默认箭头），用于模型训练表单（`model-view.js` 的 `FIELD_TIPS`）等参数密集场景。
 
 ---
 
@@ -438,9 +467,9 @@ ctrl.destroy();                // dispose 时调用（路由切换会触发）
 
 | 用途 | 变量 |
 |---|---|
-| 背景层叠 | `--bg-0` → `--bg-3`（由深至浅） |
+| 背景层叠 | `--bg-1` 页面背景/标题栏/悬浮卡片背景、`--bg-0` 主内容悬浮卡片、`--bg-2` 侧边栏面板与填充、`--bg-3` hover、`--glass-bg` 卡片 |
 | 文字层叠 | `--text-1` 强 / `--text-2` 中 / `--text-3` 弱 |
-| 主题色 | `--accent`（靛紫 `#6366f1`） |
+| 主题色 | `--accent`（黑灰 `#404040`，无品牌色） |
 | 涨 / 跌 / 警告 | `--green` / `--red` / `--orange` |
 
 ### 圆角

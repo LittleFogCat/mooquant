@@ -15,8 +15,8 @@
   --text-3: #8e8e8e;
 
   /* Accent (ChatGPT uses black/gray, not brand color) */
-  --accent: #0d0d0d;
-  --accent-hover: #2d2d2d;
+  --accent: #404040;
+  --accent-hover: #303030;
   --accent-dim: rgba(0, 0, 0, 0.06);
   --accent-fg: #ffffff;
 
@@ -52,16 +52,16 @@
 
 [data-theme="dark"] {
   --bg-0: #212121;
-  --bg-1: #171717;
-  --bg-2: #2f2f2f;
-  --bg-3: #3d3d3d;
+  --bg-1: #2e2e2e;
+  --bg-2: #3a3a3a;
+  --bg-3: #444444;
 
   --text-1: #ececec;
   --text-2: #b4b4b4;
   --text-3: #8e8e8e;
 
-  --accent: #ececec;
-  --accent-hover: #ffffff;
+  --accent: #d0d0d0;
+  --accent-hover: #e0e0e0;
   --accent-dim: rgba(255, 255, 255, 0.08);
   --accent-fg: #171717;
 
@@ -72,10 +72,10 @@
   --border: rgba(255, 255, 255, 0.08);
   --border-hover: rgba(255, 255, 255, 0.15);
 
-  --glass-bg: #2f2f2f;
+  --glass-bg: #292929;
   --glass-border: rgba(255, 255, 255, 0.08);
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.45);
   --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
@@ -93,7 +93,7 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "SF Pro Display",
     "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
   color: var(--text-1);
-  background: var(--bg-0);
+  background: var(--bg-1);
   overflow: hidden;
 }
 
@@ -103,15 +103,18 @@ html, body {
 }
 
 /* Titlebar drag region: transparent, blends into background */
-.titlebar-drag-region {
+.titlebar {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   height: var(--titlebar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
   -webkit-app-region: drag;
   z-index: 9999;
-  pointer-events: none;
 }
 
 /* Scrollbar: minimal */
@@ -134,6 +137,13 @@ html, body {
 }
 [data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* Theme switch transition (applied temporarily via JS) */
+.theme-transitioning *,
+.theme-transitioning *::before,
+.theme-transitioning *::after {
+  transition: background-color 2s ease, color 2s ease, border-color 2s ease, box-shadow 2s ease, fill 2s ease, stroke 2s ease !important;
 }
 
 /* Animations */

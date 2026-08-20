@@ -3,6 +3,16 @@ function escapeHtml(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, 
     function paint(state) {
       root.innerHTML = `
         <div class="card">
+          <div class="card-title">外观</div>
+          <div class="form-group">
+            <label class="form-label">主题模式</label>
+            <div class="radio-group">
+              <label class="radio-item ${state.theme === "light" ? "checked" : ""}"><input type="radio" name="theme" value="light" ${state.theme === "light" ? "checked" : ""} /><span class="radio-label">浅色模式</span></label>
+              <label class="radio-item ${state.theme === "dark" ? "checked" : ""}"><input type="radio" name="theme" value="dark" ${state.theme === "dark" ? "checked" : ""} /><span class="radio-label">深色模式</span></label>
+            </div>
+          </div>
+        </div>
+        <div class="card">
           <div class="card-title">数据源设置</div>
           ${state.error ? `<div class="status error" style="margin-bottom:16px">${escapeHtml(state.error)}</div>` : ""}
           ${state.saved ? `
@@ -50,6 +60,10 @@ function escapeHtml(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, 
       }); });
       root.querySelectorAll('input[name="ts"]').forEach(el => { el.addEventListener("change", () => {
         vm.setField("tradeSource", el.value);
+        root.querySelectorAll('label.radio-item').forEach(l => { const inp = l.querySelector("input"); l.classList.toggle("checked", inp && inp.checked); });
+      }); });
+      root.querySelectorAll('input[name="theme"]').forEach(el => { el.addEventListener("change", () => {
+        vm.setTheme(el.value);
         root.querySelectorAll('label.radio-item').forEach(l => { const inp = l.querySelector("input"); l.classList.toggle("checked", inp && inp.checked); });
       }); });
       const saveBtn = root.querySelector("#settingsSave");

@@ -16,6 +16,27 @@ import * as echarts from 'echarts';
     if (n == null || isNaN(n)) return "-";
     return Number(n).toLocaleString("zh-CN", { minimumFractionDigits: d, maximumFractionDigits: d });
   }
+
+  /** Read CSS variables for ECharts (Canvas-rendered, cannot use var() directly) */
+  function getThemeColors() {
+    var s = getComputedStyle(document.documentElement);
+    var isDark = document.documentElement.getAttribute("data-theme") === "dark";
+    function v(name, fallback) { var val = s.getPropertyValue(name).trim(); return val || fallback; }
+    return {
+      bg: v("--bg-0", isDark ? "#212121" : "#ffffff"),
+      text1: v("--text-1", isDark ? "#ececec" : "#0d0d0d"),
+      text2: v("--text-2", isDark ? "#b4b4b4" : "#5d5d5d"),
+      text3: v("--text-3", "#8e8e8e"),
+      border: v("--border", isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"),
+      accent: v("--accent", isDark ? "#ececec" : "#0d0d0d"),
+      isDark: isDark,
+      gridLine: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
+      axisLine: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
+      axisLabel: isDark ? "#8e8e8e" : "#8e8e8e",
+      zoomBg: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)",
+      zoomFiller: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
+    };
+  }
   function toDate(b) {
     if (b.date) return b.date;
     if (b.time) {
@@ -118,9 +139,9 @@ import * as echarts from 'echarts';
     settingsPanel = document.createElement("div");
     settingsPanel.style.cssText =
       "position:absolute;top:36px;right:0;z-index:101;display:none;" +
-      "background:rgba(26,26,37,0.98);border:1px solid rgba(255,255,255,0.12);" +
-      "border-radius:8px;padding:12px 14px;min-width:170px;font-size:13px;color:#e8e8ed;" +
-      "box-shadow:0 4px 16px rgba(0,0,0,0.4);";
+      "background:var(--bg-0);border:1px solid var(--border);" +
+      "border-radius:var(--radius-md);padding:12px 14px;min-width:170px;font-size:13px;color:var(--text-1);" +
+      "box-shadow:var(--shadow-lg);";
     container.appendChild(settingsPanel);
 
     // Chart container
@@ -134,11 +155,11 @@ import * as echarts from 'echarts';
       var html = "";
       if (hasTrades) {
         html += '<div style="margin-bottom:10px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
-          '<input type="checkbox" class="kline-cb-trades" ' + (state.showTrades ? "checked" : "") + ' style="cursor:pointer;accent-color:#6366f1" />' +
+          '<input type="checkbox" class="kline-cb-trades" ' + (state.showTrades ? "checked" : "") + ' style="cursor:pointer;accent-color:var(--accent)" />' +
           "显示BS点</label></div>";
       }
-      html += "<div><div style=\"margin-bottom:4px;color:#9ca3af\">复权类型</div>" +
-        '<select class="kline-sel-dividend" style="width:100%;background:#1a1a25;color:#e8e8ed;border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:4px 6px;font-size:13px;cursor:pointer">' +
+      html += "<div><div style=\"margin-bottom:4px;color:var(--text-3)\">复权类型</div>" +
+        '<select class="kline-sel-dividend" style="width:100%;background:var(--bg-2);color:var(--text-1);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font-size:13px;cursor:pointer">' +
         '<option value="front"' + (state.dividendType === "front" ? " selected" : "") + ">前复权</option>" +
         '<option value="back"' + (state.dividendType === "back" ? " selected" : "") + ">后复权</option>" +
         '<option value="none"' + (state.dividendType === "none" ? " selected" : "") + ">不复权</option>" +
@@ -176,13 +197,14 @@ import * as echarts from 'echarts';
 
     // ---- Chart rendering ----
     function renderChart() {
+      var tc = getThemeColors();
       var bars = state.bars;
       if (!bars || bars.length < 2) {
         if (chart) { try { chart.dispose(); } catch (e) {} chart = null; }
         chart = echarts.init(chartDiv, "dark");
         chart.setOption({
           backgroundColor: "transparent",
-          title: { text: state.title || "暂无数据", left: "center", top: "center", textStyle: { color: "#5a5a68", fontSize: 14, fontWeight: "normal" } }
+          title: { text: state.title || "暂无数据", left: "center", top: "center", textStyle: { color: tc.text3, fontSize: 14, fontWeight: "normal" } }
         });
         infoEl.textContent = "";
         return;
@@ -264,8 +286,8 @@ import * as echarts from 'echarts';
         // 折线图模式：收盘价折线
         series.push({
           name: "收盘价", type: "line", data: closePrices, symbol: "none",
-          lineStyle: { color: "#6366f1", width: 1.5 },
-          areaStyle: { color: "rgba(99,102,241,0.08)" },
+          lineStyle: { color: tc.accent, width: 1.5 },
+          areaStyle: { color: tc.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)" },
         });
       } else {
         // 蜡烛图模式
@@ -379,9 +401,9 @@ import * as echarts from 'echarts';
         tooltip: {
           trigger: "axis", axisPointer: { type: "cross" },
           formatter: tooltipFormatter,
-          backgroundColor: "rgba(26,26,37,0.95)",
-          borderColor: "rgba(255,255,255,0.08)",
-          textStyle: { color: "#e8e8ed", fontSize: 12 }
+          backgroundColor: tc.bg,
+          borderColor: tc.border,
+          textStyle: { color: tc.text1, fontSize: 12 }
         },
         axisPointer: { link: [{ xAxisIndex: "all" }] },
         grid: [
@@ -389,16 +411,16 @@ import * as echarts from 'echarts';
           { left: "8%", right: "6%", top: "68%", height: "18%" }
         ],
         xAxis: [
-          { type: "category", data: dates, scale: true, boundaryGap: !useLineChart, splitLine: { show: false }, axisLine: { lineStyle: { color: "rgba(255,255,255,0.1)" } }, axisLabel: { color: "#5a5a68", fontSize: 10 } },
+          { type: "category", data: dates, scale: true, boundaryGap: !useLineChart, splitLine: { show: false }, axisLine: { lineStyle: { color: tc.axisLine } }, axisLabel: { color: tc.axisLabel, fontSize: 10 } },
           { type: "category", gridIndex: 1, data: dates, scale: true, boundaryGap: true, splitLine: { show: false }, axisLabel: { show: false } }
         ],
         yAxis: [
-          { scale: true, splitLine: { lineStyle: { color: "rgba(255,255,255,0.04)" } }, axisLabel: { color: "#5a5a68", fontSize: 10, formatter: function (v) { return fmtPrice(v); } } },
-          { gridIndex: 1, scale: true, splitNumber: 2, axisLabel: { color: "#5a5a68", fontSize: 10, formatter: function (v) { return fmtVol(v); } }, splitLine: { show: false } }
+          { scale: true, splitLine: { lineStyle: { color: tc.gridLine } }, axisLabel: { color: tc.axisLabel, fontSize: 10, formatter: function (v) { return fmtPrice(v); } } },
+          { gridIndex: 1, scale: true, splitNumber: 2, axisLabel: { color: tc.axisLabel, fontSize: 10, formatter: function (v) { return fmtVol(v); } }, splitLine: { show: false } }
         ],
         dataZoom: [
           { type: "inside", xAxisIndex: [0, 1], start: dzStart, end: dzEnd },
-          { show: true, type: "slider", xAxisIndex: [0, 1], top: "90%", start: dzStart, end: dzEnd, height: 16, borderColor: "transparent", backgroundColor: "rgba(255,255,255,0.03)", fillerColor: "rgba(99,102,241,0.15)", handleStyle: { color: "#6366f1" }, textStyle: { color: "#5a5a68", fontSize: 10 } }
+          { show: true, type: "slider", xAxisIndex: [0, 1], top: "90%", start: dzStart, end: dzEnd, height: 16, borderColor: "transparent", backgroundColor: tc.zoomBg, fillerColor: tc.zoomFiller, handleStyle: { color: tc.accent }, textStyle: { color: tc.text3, fontSize: 10 } }
         ],
         series: series
       }, true);
@@ -425,6 +447,7 @@ import * as echarts from 'echarts';
 
     function destroy() {
       if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null; }
+      if (themeObserver) { themeObserver.disconnect(); themeObserver = null; }
       document.removeEventListener("click", outsideHandler);
       if (chart) { try { chart.dispose(); } catch (e) {} chart = null; }
       container.innerHTML = "";
@@ -435,6 +458,10 @@ import * as echarts from 'echarts';
       resizeObserver = new ResizeObserver(function () { if (chart) chart.resize(); });
       resizeObserver.observe(chartDiv);
     }
+
+    // ---- Theme observer: 主题切换时重渲染图表颜色 ----
+    var themeObserver = new MutationObserver(function () { if (chart) renderChart(); });
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
     // ---- 初始渲染 ----
     renderChart();

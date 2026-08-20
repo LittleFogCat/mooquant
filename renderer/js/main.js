@@ -104,6 +104,15 @@ safe('设置页', () => {
   Router.onEnter("settings", () => settingsVM.load());
 });
 
+// ---- 应用版本号 ----
+safe('应用版本号', () => {
+  if (!facade.app) return;
+  facade.app.info().then(info => {
+    const ver = document.getElementById('appVersion');
+    if (ver && info.version) ver.textContent = 'v' + info.version;
+  }).catch(() => {});
+});
+
 // ---- QMT 状态轮询 ----
 safe('QMT状态', () => {
   async function pollQmtStatus() {
@@ -143,18 +152,20 @@ safe('模型页', () => {
 });
 
 // ---- 路由初始化（始终执行，不受上面错误影响）----
-// ---- 侧边栏折叠 ----
+// ---- 侧边栏折叠 + 标题栏同步 ----
 safe('侧边栏折叠', () => {
   const sidebar = document.getElementById('navBar');
   const contentArea = document.querySelector('.content-area');
+  const titlebar = document.getElementById('titlebar');
   const toggle = document.getElementById('sidebarToggle');
-  if (!sidebar || !toggle || !contentArea) return;
+  if (!sidebar || !toggle || !contentArea || !titlebar) return;
 
   const COLLAPSE_KEY = 'mookquant.sidebar.collapsed';
 
   function applyCollapsed(collapsed) {
     sidebar.classList.toggle('collapsed', collapsed);
     contentArea.classList.toggle('sidebar-collapsed', collapsed);
+    titlebar.classList.toggle('collapsed', collapsed);
     toggle.title = collapsed ? '展开侧边栏' : '折叠侧边栏';
   }
 
@@ -168,33 +179,60 @@ safe('侧边栏折叠', () => {
   });
 });
 
-// ---- 主题切换 ----
-safe('主题切换', () => {
-  const THEME_KEY = 'mookquant.theme';
-  const html = document.documentElement;
-  const toggle = document.getElementById('themeToggle');
-  const span = toggle ? toggle.querySelector('span') : null;
-  const iconSun = toggle ? toggle.querySelector('.icon-sun') : null;
-  const iconMoon = toggle ? toggle.querySelector('.icon-moon') : null;
+// ---- 窗口控制按钮 ----
+safe('窗口控制', () => {
+  const isElectron = !!(window.mookquant && window.mookquant.isElectron);
+  const controls = document.getElementById('titlebarControls');
 
-  function applyTheme(theme) {
-    html.setAttribute('data-theme', theme);
-    if (span) span.textContent = theme === 'dark' ? '深色模式' : '浅色模式';
-    if (iconSun) iconSun.style.display = theme === 'dark' ? 'none' : '';
-    if (iconMoon) iconMoon.style.display = theme === 'dark' ? '' : 'none';
+  // 非 Electron 环境（纯浏览器）隐藏窗口按钮
+  if (!isElectron || !facade.window) {
+    if (controls) controls.style.display = 'none';
+    return;
   }
 
-  const saved = localStorage.getItem(THEME_KEY) || 'light';
-  applyTheme(saved);
+  const btnMin = document.getElementById('winMinimize');
+  const btnMax = document.getElementById('winMaximize');
+  const btnClose = document.getElementById('winClose');
 
-  if (toggle) {
-    toggle.addEventListener('click', () => {
-      const current = html.getAttribute('data-theme') || 'light';
-      const next = current === 'light' ? 'dark' : 'light';
-      applyTheme(next);
-      localStorage.setItem(THEME_KEY, next);
+  if (btnMin) btnMin.addEventListener('click', () => facade.window.minimize());
+  if (btnClose) btnClose.addEventListener('click', () => facade.window.close());
+
+  if (btnMax) {
+    const iconMax = btnMax.querySelector('.icon-maximize');
+    const iconRestore = btnMax.querySelector('.icon-restore');
+
+    function updateMaxIcon(isMax) {
+      if (!iconMax || !iconRestore) return;
+      iconMax.style.display = isMax ? 'none' : '';
+      iconRestore.style.display = isMax ? '' : 'none';
+      btnMax.title = isMax ? '还原' : '最大化';
+    }
+
+    btnMax.addEventListener('click', async () => {
+      const isMax = await facade.window.maximize();
+      updateMaxIcon(isMax);
     });
+
+    // 初始化最大化状态
+    facade.window.isMaximized().then(updateMaxIcon);
+
+    // 监听最大化/还原事件
+    facade.window.onMaximizeChange(updateMaxIcon);
   }
+});
+
+// ---- 主题初始化（从 localStorage 恢复）----
+safe('主题初始化', () => {
+  const THEME_KEY = 'mookquant.theme';
+  const saved = localStorage.getItem(THEME_KEY) || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+});
+
+// ---- 设置快捷入口 ----
+safe('设置快捷入口', () => {
+  const btn = document.getElementById('settingsBtn');
+  if (!btn) return;
+  btn.addEventListener('click', () => Router.switchPage('settings'));
 });
 
 Router.init();

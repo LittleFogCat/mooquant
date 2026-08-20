@@ -85,16 +85,26 @@ function createWindow(config) {
     minWidth: 860, minHeight: 600, show: false,
     backgroundColor: "#ffffff",
     titleBarStyle: "hidden",
-    titleBarOverlay: process.platform === "win32" ? { color: "rgba(0,0,0,0)", symbolColor: "#0d0d0d", height: 40 } : undefined,
-    trafficLightPosition: process.platform === "darwin" ? { x: 16, y: 18 } : undefined,
-    trafficLightPosition: process.platform === "darwin" ? { x: 16, y: 18 } : undefined,
     title: "mookquant",
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: false, webSecurity: true },
   });
   mainWindow.loadFile(path.join(__dirname, "dist", "renderer", "index.html"));
-  mainWindow.once("ready-to-show", () => { mainWindow.maximize(); mainWindow.show(); });
+  mainWindow.once("ready-to-show", () => {
+    mainWindow.maximize();
+    mainWindow.show();
+    // 启动即最大化时，确保渲染层窗口控制按钮拿到正确初始状态（避免事件订阅前错过）
+    setTimeout(() => {
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("window:maximizeChanged", mainWindow.isMaximized());
+      }
+    }, 150);
+  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
   mainWindow.on("closed", () => { mainWindow = null; });
+
+  // ?????/?????????
+  mainWindow.on("maximize", () => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send("window:maximizeChanged", true); });
+  mainWindow.on("unmaximize", () => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send("window:maximizeChanged", false); });
 }
 
 function buildMenu() {
@@ -178,7 +188,7 @@ app.whenReady().then(async () => {
     modelService = null;
   }
 
-  registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, strategyBridge, modelService });
+  registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, strategyBridge, modelService, getMainWindow: () => mainWindow });
 
   updateSplash(splash, "启动完成", 100);
   console.log("[main] 数据源初始化完成，IPC 已注册");

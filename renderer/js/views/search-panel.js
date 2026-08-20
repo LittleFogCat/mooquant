@@ -20,7 +20,7 @@ const QUICK_TAGS = [
       </div>
       <div class="quick-tags">
         <span class="tag-label">热门：</span>
-        ${QUICK_TAGS.map(t => `<button class="tag" data-symbol="${t.symbol}">${t.label}</button>`).join("")}
+        ${QUICK_TAGS.map(t => `<button class="quick-tag" data-symbol="${t.symbol}">${t.label}</button>`).join("")}
       </div>
     `;
 
@@ -43,7 +43,7 @@ const QUICK_TAGS = [
     });
 
     btn.addEventListener("click", () => { searchCtrl.hide(); viewModel.query(); });
-    root.querySelectorAll(".tag").forEach(t => {
+    root.querySelectorAll(".quick-tag").forEach(t => {
       t.addEventListener("click", () => { searchCtrl.hide(); viewModel.querySymbol(t.dataset.symbol); });
     });
   }
