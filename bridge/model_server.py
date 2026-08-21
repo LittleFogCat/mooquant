@@ -18,19 +18,13 @@ if BRIDGE_DIR not in sys.path:
 
 from strategies.registry import load_all, get, list_strategies, save_strategy, delete_strategy
 from strategies.base import Context
+from strategies.ml.base import ARCH_STRATEGY_MAP as _ARCH_STRATEGY_MAP
 from training.model_registry import ModelRegistry
 from training.pipeline import TrainPipeline
 from training.builtin_models import ensure_builtin_models
 
 # Active model persistence
 ACTIVE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'models', 'active.json')
-
-
-_ARCH_STRATEGY_MAP = {
-    'lstm': 'lstm_trend',
-    'mlp': 'mlp_classifier',
-    'transformer': 'transformer_trend',
-}
 
 
 # S6: strategy source code safety check
@@ -83,18 +77,26 @@ def _get_active_model():
     return {}
 
 
-def _set_active_model(model_id):
-    """Activate a model. Auto-detects strategy from model arch."""
+def _set_active_model(model_id, force=False):
+    """Activate a model. Auto-detects strategy from model arch.
+
+    守门（M3.3）：degraded（体检报告 red）模型激活需 force=True。
+    """
     strategy = 'lstm_trend'
+    degraded = False
     try:
         meta = ModelRegistry.get_meta(model_id)
         arch = meta.get('arch', '')
         strategy = _ARCH_STRATEGY_MAP.get(arch, 'lstm_trend')
+        degraded = bool(meta.get('metrics', {}).get('degraded'))
     except Exception:
         pass
+    if degraded and not force:
+        raise ValueError('模型体检不合格（degraded），激活需 force=true 确认')
     os.makedirs(os.path.dirname(ACTIVE_FILE), exist_ok=True)
     with open(ACTIVE_FILE, 'w') as f:
         json.dump({'model_id': model_id, 'strategy': strategy}, f, ensure_ascii=False)
+    return {'degraded': degraded}
 
 
 # Global state
@@ -105,13 +107,12 @@ _strategies_loaded = False
 def _ensure_loaded():
     global _strategies_loaded
     if not _strategies_loaded:
-        load_all()
+        load_all()  # 含 ML 策略（registry 统一扫描 strategies/ml/builtin）
         # Import ML models so they register
         try:
             import strategies.ml.models  # noqa
-            import strategies.ml.builtin.lstm_trend  # noqa
         except ImportError:
-            pass  # torch not available, ML strategies skip
+            pass  # torch not available, ML models skip
         ensure_builtin_models()
         _strategies_loaded = True
 
@@ -175,6 +176,67 @@ def _compute_signal(strategy_name, bars, params, symbol):
     if signal is None:
         return {'action': 'hold', 'reason': '无信号'}
     return signal.to_dict()
+
+
+def _normalize_train_config(config):
+    """将 UI 训练表单的扁平参数转换为 Trainer 期望的嵌套格式。
+
+    UI 发送：{symbol, period, bar_count, architecture, epochs,
+             learning_rate, hidden_size, batch_size, label_type}
+    Trainer 期望：{data.{symbols,period,count}, model_arch, model_params,
+                  train_config.{epochs,learning_rate,batch_size},
+                  label_config.{type}, feature_config}
+
+    已是嵌套格式（含 model_arch/data）时原样返回，兼容脚本直调。
+    """
+    if not isinstance(config, dict):
+        return config
+    if 'model_arch' in config or 'data' in config or 'feature_config' in config:
+        return config
+
+    nested = {}
+    data = {}
+    syms = config.get('symbols') or config.get('symbol')
+    if syms:
+        if isinstance(syms, str):
+            syms = [s.strip() for s in syms.split(',') if s.strip()]
+        elif isinstance(syms, list):
+            syms = [str(s).strip() for s in syms if str(s).strip()]
+        data['symbols'] = syms
+    if config.get('period'):
+        data['period'] = config['period']
+    if config.get('bar_count'):
+        data['count'] = config['bar_count']
+    if data:
+        nested['data'] = data
+
+    if config.get('architecture'):
+        nested['model_arch'] = config['architecture']
+
+    model_params = {}
+    if config.get('hidden_size'):
+        model_params['hidden_size'] = config['hidden_size']
+    if model_params:
+        nested['model_params'] = model_params
+
+    train_config = {}
+    for src, dst in (('epochs', 'epochs'), ('learning_rate', 'learning_rate'),
+                     ('batch_size', 'batch_size')):
+        if config.get(src):
+            train_config[dst] = config[src]
+    if train_config:
+        nested['train_config'] = train_config
+
+    label_config = {}
+    if config.get('label_type'):
+        label_config['type'] = config['label_type']
+    if label_config:
+        nested['label_config'] = label_config
+
+    for k in ('model_name', 'name', 'parent_model_id'):
+        if config.get(k):
+            nested[k] = config[k]
+    return nested
 
 
 class ModelHandler(BaseHTTPRequestHandler):
@@ -256,16 +318,24 @@ class ModelHandler(BaseHTTPRequestHandler):
             params = body.get('params', {})
             symbol = body.get('symbol', '')
             if not name:
-                # Shell strategy: use active model's strategy
-                active = _get_active_model()
-                if active and active.get('strategy'):
-                    name = active['strategy']
-                    if not (params or {}).get('model_id'):
-                        params = dict(params or {})
-                        params['model_id'] = active.get('model_id', '')
+                # Shell strategy: resolve strategy from bound model_id, else active model
+                params = dict(params or {})
+                model_id = params.get('model_id', '')
+                if model_id:
+                    try:
+                        meta = ModelRegistry.get_meta(model_id)
+                        name = _ARCH_STRATEGY_MAP.get(meta.get('arch', ''), 'lstm_trend')
+                    except FileNotFoundError:
+                        self._send_error('Bound model not found: ' + model_id, 404, 'NOT_FOUND')
+                        return
                 else:
-                    self._send_error('No strategy specified and no active model')
-                    return
+                    active = _get_active_model()
+                    if active and active.get('strategy'):
+                        name = active['strategy']
+                        params['model_id'] = active.get('model_id', '')
+                    else:
+                        self._send_error('No strategy specified and no active model')
+                        return
             if not bars:
                 self._send_error('Missing bars data')
                 return
@@ -295,13 +365,21 @@ class ModelHandler(BaseHTTPRequestHandler):
                 self._send_error(str(e), 500, 'INTERNAL')
         elif path == '/train':
             config = self._read_body()
+            config = _normalize_train_config(config)
             task_id = _pipeline.start_train(config)
             self._send_json({'task_id': task_id})
         elif len(parts) == 3 and parts[0] == 'models' and parts[2] == 'activate':
             model_id = parts[1]
+            body = {}
             try:
-                _set_active_model(model_id)
-                self._send_json({'ok': True, 'model_id': model_id})
+                body = self._read_body()
+            except Exception:
+                body = {}
+            try:
+                info = _set_active_model(model_id, force=bool(body.get('force')))
+                self._send_json({'ok': True, 'model_id': model_id, 'degraded': info.get('degraded', False)})
+            except ValueError as e:
+                self._send_error(str(e), 409, 'DEGRADED')
             except Exception as e:
                 self._send_error(str(e), 500, 'INTERNAL')
         else:

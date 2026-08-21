@@ -4,6 +4,14 @@
 
 from strategies.base import StrategyBase, Signal
 
+# Shared arch -> strategy-type mapping (used by model_server /signal and
+# backtest engine to resolve a model to its strategy class).
+ARCH_STRATEGY_MAP = {
+    'lstm': 'lstm_trend',
+    'mlp': 'mlp_classifier',
+    'transformer': 'transformer_trend',
+}
+
 
 class MLStrategyBase(StrategyBase):
     # ML strategy skeleton. Loads a trained model on_after_init.
@@ -24,8 +32,19 @@ class MLStrategyBase(StrategyBase):
         from strategies.ml.features import FeatureBuilder
         self._wrapper, self._model_config = ModelRegistry.load(model_id)
         self._wrapper.eval()
+        # 口径指纹校验（M1.1）：旧模型或口径不一致时明确报错，防止静默漂移
+        stored_fp = self._model_config.get('data_fingerprint')
+        if stored_fp:
+            from data.datafeed import check_fingerprint
+            ok, reason = check_fingerprint(stored_fp, 'front')
+            if not ok:
+                raise ValueError('模型数据口径校验失败: {} (model_id={})'.format(reason, model_id))
         feat_cfg = self._model_config.get('feature_config', {})
         self._feature_builder = FeatureBuilder(feat_cfg)
+        # 载入训练时持久化的全局归一化统计量（global 模式），推理与训练特征尺度一致
+        stats = self._model_config.get('feature_stats')
+        if stats:
+            self._feature_builder._global_stats = stats
 
     def on_bar(self, bar, ctx):
         features = self.build_features(ctx.bars)

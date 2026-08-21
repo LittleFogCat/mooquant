@@ -24,8 +24,14 @@ class FeatureBuilder:
         self.indicators = config.get('indicators', [])
         self.raw_features = config.get('raw_features', ['close'])
         self.derived = config.get('derived', [])
+        # normalize: zscore | minmax | none
+        # normalize_mode: rolling(旧, 逐样本滚动窗, 默认) | global(新, 全序列逐列统计,
+        #   跨样本有区分度, 训练/推理一致性更好, 推荐用于真实训练)
         self.normalize = config.get('normalize', 'zscore')
+        self.norm_mode = config.get('normalize_mode', 'rolling')
         self.norm_window = config.get('normalize_window', 20)
+        # 缓存全序列统计量（global 模式）：{col_index: (mean, std|min, max)}
+        self._global_stats = None
 
     @property
     def n_features(self) -> int:
@@ -92,6 +98,42 @@ class FeatureBuilder:
                         var = sum((x-m)**2 for x in window)/len(window)
                         vals.append(math.sqrt(var))
                 cols[feat] = vals
+            # ---- M3.1 尺度不变特征（v2）：天然对单位/价格水平免疫 ----
+            elif feat == 'log_volume':
+                # log 成交量：volume ×100 单位漂移只造成 log(100)≈4.6 的常数平移，
+                # 远小于 z-score 归一化的影响；且分布更接近正态
+                cols[feat] = [math.log(v) if v and v > 0 else 0.0 for v in volumes]
+            elif feat == 'volume_ratio_5d':
+                # 量比：当日量 / 近5日均量（无量纲，跨标的可比）
+                vals = []
+                for i in range(len(volumes)):
+                    start = max(0, i-4)
+                    window = volumes[start:i+1]
+                    avg_v = sum(window)/len(window) if window else 0
+                    vals.append(volumes[i]/avg_v if avg_v > 0 else 1.0)
+                cols[feat] = vals
+            elif feat == 'ma_deviation':
+                # 价格相对 20 日均线偏离度（无量纲，替代裸 close）
+                vals = []
+                for i in range(len(closes)):
+                    start = max(0, i-19)
+                    window = closes[start:i+1]
+                    m = sum(window)/len(window)
+                    vals.append((closes[i]-m)/m if m != 0 else 0.0)
+                cols[feat] = vals
+            elif feat == 'high_low_range':
+                # 振幅：(high-low)/close -- 需要 highs/lows，由调用方保证传入
+                highs = self._last_highs or [c for c in closes]
+                lows = self._last_lows or [c for c in closes]
+                vals = []
+                for i in range(len(closes)):
+                    c = closes[i]
+                    vals.append((highs[i]-lows[i])/c if c != 0 else 0.0)
+                cols[feat] = vals
+            elif feat == 'close_return':
+                # 累计对数收益（相对首日）：保留趋势信息且尺度不变
+                base = closes[0] if closes and closes[0] != 0 else 1.0
+                cols[feat] = [math.log(c/base) if c > 0 and base > 0 else 0.0 for c in closes]
         return cols
 
     def _build_matrix(self, bars):
@@ -100,6 +142,9 @@ class FeatureBuilder:
         highs = [b.get('high', 0) for b in bars]
         lows = [b.get('low', 0) for b in bars]
         volumes = [b.get('volume', 0) for b in bars]
+        # high_low_range 等特征需要 highs/lows，通过实例属性传递（_calc_derived 签名保持兼容）
+        self._last_highs = highs
+        self._last_lows = lows
 
         all_cols = {}
         all_cols.update(self._extract_raw(bars))
@@ -135,6 +180,13 @@ class FeatureBuilder:
         return cols
 
     def _normalize(self, matrix):
+        # Global 模式：按列统计整个序列的 mean/std（zscore）或 min/max（minmax），
+        # 训练与推理都用同一套统计量，跨样本特征有区分度（替代逐样本滚动归一化）。
+        if self.norm_mode == 'global':
+            if self._global_stats is None:
+                self._global_stats = self._fit_stats(matrix)
+            return self._transform(matrix, self._global_stats)
+        # 旧 rolling 模式：逐样本滚动窗口归一化（保兼容）
         if self.normalize == 'none':
             return matrix
         nw = self.norm_window
@@ -158,19 +210,64 @@ class FeatureBuilder:
             result.append(row)
         return result
 
+    def _fit_stats(self, matrix):
+        n_cols = len(matrix[0]) if matrix else 0
+        stats = []
+        for j in range(n_cols):
+            col = [matrix[i][j] for i in range(len(matrix))]
+            m = sum(col) / len(col)
+            var = sum((x - m) ** 2 for x in col) / len(col)
+            std = math.sqrt(var) if var > 0 else 1.0
+            lo, hi = min(col), max(col)
+            stats.append({'mean': m, 'std': std, 'min': lo, 'max': hi})
+        return stats
+
+    def _transform(self, matrix, stats):
+        if self.normalize == 'none':
+            return matrix
+        result = []
+        for i in range(len(matrix)):
+            row = []
+            for j in range(len(matrix[i])):
+                s = stats[j] if j < len(stats) else {'mean': 0.0, 'std': 1.0, 'min': 0.0, 'max': 1.0}
+                if self.normalize == 'zscore':
+                    row.append((matrix[i][j] - s['mean']) / s['std'] if s['std'] != 0 else 0.0)
+                elif self.normalize == 'minmax':
+                    row.append((matrix[i][j] - s['min']) / (s['max'] - s['min']) if s['max'] != s['min'] else 0.0)
+                else:
+                    row.append(matrix[i][j])
+            result.append(row)
+        return result
+
     def build(self, bars):
         # Single sample for inference. Returns torch.Tensor (1, window, n_features) or None.
-        if len(bars) < self.window + self.norm_window:
+        # global 模式用全序列统计，无需 norm_window 滚动缓冲；rolling 模式仍需足够长度
+        min_len = self.window + (0 if self.norm_mode == 'global' else self.norm_window)
+        if len(bars) < min_len:
             return None
         matrix = self._build_matrix(bars)
         matrix = self._normalize(matrix)
+        # OOD 防御：global 归一化下若最近样本特征 |z| 异常大（>10σ），
+        # 说明输入数据口径与训练统计量不一致（如成交量单位漂移）。同一路径
+        # 只告警一次，避免逐 bar 推理刷屏
+        if self.norm_mode == 'global' and matrix:
+            if not getattr(self, '_ood_warned', False):
+                last = matrix[-1]
+                bad_cols = [j for j, v in enumerate(last) if abs(v) > 10]
+                if bad_cols:
+                    self._ood_warned = True
+                    import sys
+                    sys.stderr.write('[feature-ood] WARNING: {} features beyond 10 sigma at latest bar '
+                                     '(cols={}). Input data scale may differ from training stats.\n'.format(
+                                         len(bad_cols), bad_cols[:8]))
         window_data = matrix[-self.window:]
         import torch
         return torch.tensor(window_data, dtype=torch.float32).unsqueeze(0)
 
     def build_batch(self, bars):
         # Batch samples for training. Returns torch.Tensor (n_samples, window, n_features).
-        if len(bars) < self.window + self.norm_window:
+        min_len = self.window + (0 if self.norm_mode == 'global' else self.norm_window)
+        if len(bars) < min_len:
             return None
         matrix = self._build_matrix(bars)
         matrix = self._normalize(matrix)
