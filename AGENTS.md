@@ -100,7 +100,8 @@ mooquant/
 │       └── qmt.js                # QMT 桥接数据源（spawn Python）
 ├── bridge/                       # Python 桥
 │   ├── qmt_server.py             # stdio JSON-RPC 服务（xtquant 真实接入 + strategy.* RPC）
-│   ├── backtest_engine.py        # 回测引擎（逐bar调策略 on_bar，回测=实盘）
+│   ├── backtest_engine.py        # 回测引擎（逐bar调策略 on_bar，回测=实盘；撮合含 T+1/涨跌停/tick/最小佣金）
+│   ├── data/datafeed.py          # 统一数据访问层（唯一取数入口：口径指纹/质量校验/涨跌停判定，v0.1.16+）
 │   ├── strategies/               # 策略框架（回测与实盘共用，详见 docs/.ai/knowledge-library/03-strategy/）
 │   │   ├── base.py               # StrategyBase + Signal + Context（跨平台接口）
 │   │   ├── indicators.py         # 指标库（MA/EMA/MACD/RSI/KDJ/BOLL）
@@ -135,6 +136,7 @@ mooquant/
 - **npm install 权限问题**: 如遇 EPERM，设置 `npm_config_cache` 为项目内目录（如 `.npm-cache`）
 - **miniQMT**: 通过 `.env` 中 `QMT_HOST` / `QMT_PORT` 配置（默认 127.0.0.1:58610）
 - 知识库文档根目录在 `/docs/.ai/knowledge-library/`，如果对项目有疑问，可以先查看知识库文档
+- 模型不支持多模态，请勿尝试使用识图等功能
 
 ## 其他
 
