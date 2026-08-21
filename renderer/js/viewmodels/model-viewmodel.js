@@ -21,7 +21,7 @@ class ModelViewModel {
         period: "1d",
         barCount: 500,
         architecture: "lstm",
-        epochs: 50,
+        epochs: 80,
         learningRate: 0.001,
         hiddenSize: 64,
         batchSize: 32,
@@ -79,14 +79,15 @@ class ModelViewModel {
 
   async startTraining() {
     const cfg = this.state.trainConfig;
-    if (!cfg.symbol) {
-      this._set({ error: "\u8bf7\u8f93\u5165\u6807\u7684\u4ee3\u7801" });
+    const symbols = String(cfg.symbol || "").split(",").map(s => s.trim()).filter(Boolean);
+    if (!symbols.length) {
+      this._set({ error: "\u8bf7\u8f93\u5165\u6807\u7684\u4ee3\u7801\uff08\u591a\u4e2a\u7528\u9017\u53f7\u5206\u9694\uff09" });
       return;
     }
     this._set({ training: { active: true, taskId: null, status: null, progress: 0 }, error: null });
     try {
       const r = await this.facade.modelServer.startTraining({
-        symbol: cfg.symbol,
+        symbols: symbols,
         period: cfg.period,
         bar_count: parseInt(cfg.barCount) || 500,
         architecture: cfg.architecture,
@@ -162,13 +163,23 @@ class ModelViewModel {
     } catch (e) { /* ignore */ }
   }
 
-  async activateModel(id) {
+  async activateModel(id, force = false) {
+    // degraded 守门：体检不合格的模型激活前需二次确认
+    if (!force) {
+      const m = this.state.models.find(x => x.model_id === id);
+      const degraded = m && m.metrics && m.metrics.degraded;
+      if (degraded) {
+        const ok = window.confirm("该模型体检不合格（degraded，样本外方向预测接近无效）。\n确定仍要激活它吗？");
+        if (!ok) return;
+        force = true;
+      }
+    }
     try {
-      const r = await this.facade.modelServer.activateModel(id);
+      const r = await this.facade.modelServer.activateModel(id, force);
       if (r.ok) {
         this._set({ activeModelId: id });
       } else {
-        this._set({ error: r.error });
+        this._set({ error: r.error || (r.data && r.data.error) || "激活失败" });
       }
     } catch (e) {
       this._set({ error: e.message });

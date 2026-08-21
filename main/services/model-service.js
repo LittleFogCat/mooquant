@@ -223,8 +223,8 @@ class ModelService {
     return { ok: true, data: await this._httpPut("/models/" + encodeURIComponent(id), patch) };
   }
 
-  async activateModel(id) {
-    return { ok: true, data: await this._httpPost("/models/" + encodeURIComponent(id) + "/activate", {}) };
+  async activateModel(id, force = false) {
+    return { ok: true, data: await this._httpPost("/models/" + encodeURIComponent(id) + "/activate", { force }) };
   }
 
   async getActiveModel() {

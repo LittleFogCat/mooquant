@@ -1,7 +1,7 @@
 /**
  * mookquant · IPC 路由
  */
-function registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, strategyBridge, modelService }) {
+function registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, strategyBridge, modelService, getMainWindow }) {
   const { ipcMain } = require("electron");
   // ---- 行情 ----
   ipcMain.handle("quote:query", async (_e, s) => quoteService.query(s));
@@ -11,8 +11,26 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
   ipcMain.handle("quote:syncStocks", async () => quoteService.syncStocks());
   ipcMain.handle("quote:stockList", async () => quoteService.getStockList());
   ipcMain.handle("quote:status", async () => quoteService.getStatus());
+  // ---- ???? ----
+  ipcMain.handle("window:minimize", async () => { const w = getMainWindow(); if (w) w.minimize(); });
+  ipcMain.handle("window:maximize", async () => {
+    const w = getMainWindow(); if (!w) return false;
+    // maximize/unmaximize 为异步原生操作，立即 isMaximized() 可能读到旧值，
+    // 因此先计算目标态并直接返回，避免渲染层图标状态错乱。
+    const willMaximize = !w.isMaximized();
+    if (willMaximize) w.maximize(); else w.unmaximize();
+    return willMaximize;
+  });
+  ipcMain.handle("window:close", async () => { const w = getMainWindow(); if (w) w.close(); });
+  ipcMain.handle("window:isMaximized", async () => { const w = getMainWindow(); return w ? w.isMaximized() : false; });
+
   // ---- App ----
-  ipcMain.handle("app:info", async () => { const { app } = require("electron"); return { name: app.getName(), version: app.getVersion(), platform: process.platform }; });
+  ipcMain.handle("app:info", async () => {
+    const { app } = require("electron");
+    let version = app.getVersion();
+    try { version = require("../../config").version || version; } catch (e) {}
+    return { name: app.getName(), version, platform: process.platform };
+  });
   ipcMain.handle("app:restart", async () => { const { app } = require("electron"); app.relaunch(); app.exit(0); });
   // ---- 策略 ----
   if (strategyService) {
@@ -114,7 +132,7 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
     ipcMain.handle("model:trainStatus", async (_e, taskId) => { try { return await modelService.getTrainingStatus(taskId); } catch (e) { return { ok: false, error: e.message }; } });
     ipcMain.handle("model:signal", async (_e, payload) => { try { return await modelService.computeSignal(payload); } catch (e) { return { ok: false, error: e.message }; } });
     ipcMain.handle("model:updateModel", async (_e, id, patch) => { try { return await modelService.updateModel(id, patch); } catch (e) { return { ok: false, error: e.message }; } });
-    ipcMain.handle("model:activate", async (_e, id) => { try { return await modelService.activateModel(id); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:activate", async (_e, id, force) => { try { return await modelService.activateModel(id, !!force); } catch (e) { return { ok: false, error: e.message }; } });
     ipcMain.handle("model:active", async () => { try { return await modelService.getActiveModel(); } catch (e) { return { ok: false, error: e.message }; } });
   }
 }

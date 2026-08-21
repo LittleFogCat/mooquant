@@ -10,7 +10,9 @@ class BacktestViewModel {
     var saved = this._loadConfig();
     this.state = {
       strategies: [],
+      models: [],
       selectedId: saved.selectedId || "",
+      modelId: saved.modelId || "",
       startDate: saved.startDate || "",
       endDate: saved.endDate || "",
       symbols: saved.symbols || "",
@@ -36,6 +38,7 @@ class BacktestViewModel {
     try {
       localStorage.setItem(this._storageKey, JSON.stringify({
         selectedId: s.selectedId,
+        modelId: s.modelId,
         startDate: s.startDate,
         endDate: s.endDate,
         symbols: s.symbols,
@@ -76,12 +79,43 @@ class BacktestViewModel {
     } catch (e) {
       // 静默
     }
+    this.loadModels();
+  }
+
+  async loadModels() {
+    try {
+      if (!this.facade.modelServer || !this.facade.modelServer.listModels) return;
+      const resp = await this.facade.modelServer.listModels();
+      if (resp.ok && Array.isArray(resp.data)) {
+        this._set({ models: resp.data });
+      }
+    } catch (e) {
+      // 静默
+    }
   }
 
   setField(key, value) {
     this.state[key] = value;
     this._saveConfig();
     // Silent: no re-render to preserve input focus
+  }
+
+  /** 把后端错误翻译成人话（M4：失败信息可读化） */
+  _humanizeError(msg) {
+    const m = String(msg || "");
+    if (/数据不足|回测数据不足/.test(m)) {
+      return "回测区间内K线数据不足（可能标的未上市、停牌或数据源缺失），请扩大时间范围或更换标的";
+    }
+    if (/连接 miniQMT 失败|xtquant 不可用/.test(m)) {
+      return "无法连接 miniQMT 行情服务，请确认 QMT 客户端已启动；当前将使用模拟数据";
+    }
+    if (/模型不存在/.test(m)) {
+      return "所选模型不存在（可能已被删除），请重新选择模型";
+    }
+    if (/口径/.test(m)) {
+      return m + "（旧版本模型与当前数据口径不兼容，请在模型页重新训练）";
+    }
+    return m;
   }
 
   async run() {
@@ -95,6 +129,7 @@ class BacktestViewModel {
     try {
       const resp = await this.facade.backtest.run({
         strategyId: s.selectedId,
+        modelId: s.modelId || "",
         symbols: s.symbols,
         startDate: s.startDate,
         endDate: s.endDate,
@@ -104,10 +139,10 @@ class BacktestViewModel {
         dividendType: s.dividendType || "front",
         period: s.period || "1d",
       });
-      if (!resp.ok) { this._set({ running: false, error: resp.error }); return; }
+      if (!resp.ok) { this._set({ running: false, error: this._humanizeError(resp.error) }); return; }
       this._set({ running: false, result: resp.data });
     } catch (e) {
-      this._set({ running: false, error: e.message });
+      this._set({ running: false, error: this._humanizeError(e.message) });
     }
   }
 }

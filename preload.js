@@ -66,9 +66,20 @@ const facade = {
     getTrainingStatus: (taskId) => ipcRenderer.invoke("model:trainStatus", taskId),
     computeSignal: (payload) => ipcRenderer.invoke("model:signal", payload),
     updateModel: (id, patch) => ipcRenderer.invoke("model:updateModel", id, patch),
-    activateModel: (id) => ipcRenderer.invoke("model:activate", id),
+    activateModel: (id, force) => ipcRenderer.invoke("model:activate", id, force),
     getActiveModel: () => ipcRenderer.invoke("model:active"),
+  },
+  window: {
+    minimize: () => ipcRenderer.invoke("window:minimize"),
+    maximize: () => ipcRenderer.invoke("window:maximize"),
+    close: () => ipcRenderer.invoke("window:close"),
+    isMaximized: () => ipcRenderer.invoke("window:isMaximized"),
+    onMaximizeChange: (callback) => {
+      const handler = (_e, isMaximized) => callback(isMaximized);
+      ipcRenderer.on("window:maximizeChanged", handler);
+      return () => ipcRenderer.removeListener("window:maximizeChanged", handler);
+    },
   },
   app: { info: () => ipcRenderer.invoke("app:info"), restart: () => ipcRenderer.invoke("app:restart") },
 };
-contextBridge.exposeInMainWorld("mookquant", { facade, isElectron: true });
+contextBridge.exposeInMainWorld("mookquant", { facade, isElectron: true, platform: process.platform });

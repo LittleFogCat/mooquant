@@ -12,6 +12,15 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
   function fmtPct(n) { if (n == null || isNaN(n)) return "-"; return (n >= 0 ? "+" : "") + Number(n).toFixed(2) + "%"; }
   function fmtNum(n, d) { d = d || 2; if (n == null || isNaN(n)) return "-"; return Number(n).toLocaleString("zh-CN", { minimumFractionDigits: d, maximumFractionDigits: d }); }
   function cls(n) { if (n > 0) return "up"; if (n < 0) return "down"; return "flat"; }
+  function modelName(m) {
+    if (!m) return "";
+    if (m.name && m.name !== "unnamed") return m.name;
+    if (m.arch) {
+      var ts = (m.created_at || "").slice(0, 10);
+      return m.arch + (ts ? " · " + ts : "");
+    }
+    return m.model_id || "";
+  }
 
   let _fpStart = null, _fpEnd = null;
   let _equityChart = null;
@@ -19,6 +28,9 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
 
   function renderConfig(state, vm) {
     const opts = state.strategies.map(s => `<option value="${esc(s.id)}" ${state.selectedId === s.id ? "selected" : ""}>${esc(s.name)}</option>`).join("");
+    const modelOpts = [`<option value="" ${!state.modelId ? "selected" : ""}>跟随策略绑定 / 激活模型</option>`]
+      .concat((state.models || []).map(m => `<option value="${esc(m.model_id)}" ${state.modelId === m.model_id ? "selected" : ""}>${esc(modelName(m))}</option>`))
+      .join("");
     return `
       <div class="card">
         <div class="card-title">回测配置</div>
@@ -26,6 +38,10 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
         <div class="form-group">
           <label class="form-label">选择策略</label>
           <select class="input-field" id="bt_strategy">${opts || `<option value="">请先在策略页创建策略</option>`}</select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">回测模型 <span style="color:var(--text-3);font-size:11px">（ML/壳策略生效）</span></label>
+          <select class="input-field" id="bt_model">${modelOpts}</select>
         </div>
         <div class="form-group">
           <label class="form-label">回测标的</label>
@@ -57,9 +73,14 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
       <div class="stat-card"><div class="stat-label">年化收益率</div><div class="stat-value ${cls(m.annualReturn)}">${fmtPct(m.annualReturn)}</div></div>
       <div class="stat-card"><div class="stat-label">最大回撤</div><div class="stat-value down">${fmtPct(m.maxDrawdown)}</div></div>
       <div class="stat-card"><div class="stat-label">夏普比率</div><div class="stat-value">${fmtNum(m.sharpeRatio)}</div></div>
+      <div class="stat-card"><div class="stat-label">索提诺比率</div><div class="stat-value">${fmtNum(m.sortinoRatio)}</div></div>
+      <div class="stat-card"><div class="stat-label">卡玛比率</div><div class="stat-value">${fmtNum(m.calmarRatio)}</div></div>
+      <div class="stat-card"><div class="stat-label">年化波动率</div><div class="stat-value">${fmtPct(m.annualVolatility)}</div></div>
+      <div class="stat-card"><div class="stat-label">平均持仓天数</div><div class="stat-value">${fmtNum(m.avgHoldDays, 1)}</div></div>
       <div class="stat-card"><div class="stat-label">胜率</div><div class="stat-value">${fmtPct(m.winRate)}</div></div>
       <div class="stat-card"><div class="stat-label">盈亏比</div><div class="stat-value">${fmtNum(m.profitLossRatio)}</div></div>
       <div class="stat-card"><div class="stat-label">交易次数</div><div class="stat-value">${m.totalTrades || 0}</div></div>
+      <div class="stat-card"><div class="stat-label">被跳过信号</div><div class="stat-value">${m.skippedSignals || 0}<span style="font-size:11px;color:var(--text-3)"> 涨跌停/T+1</span></div></div>
       <div class="stat-card"><div class="stat-label">最终资金</div><div class="stat-value">${fmtNum(m.finalCapital, 0)}</div></div>
     `;
     let curveHtml = `<div class="equity-curve">暂无净值数据</div>`;
@@ -75,7 +96,10 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
       <tr><td>${esc(t.date)}</td><td><span class="badge badge-${t.side === "buy" ? "buy" : "sell"}">${t.side === "buy" ? "买入" : "卖出"}</span></td><td>${esc(t.symbol)}</td><td class="num">${fmtNum(t.price)}</td><td class="num">${t.quantity}</td><td class="num">${fmtNum(t.amount, 0)}</td><td class="${cls(t.pnl)} num">${t.pnl ? fmtNum(t.pnl) : "-"}</td></tr>
     `).join("");
     return `
-      <div class="card"><div class="card-title">${result.name || ""}（${result.symbol || ""}）</div><div class="stats-grid">${statsHtml}</div></div>
+      <div class="card"><div class="card-title">${result.name || ""}（${result.symbol || ""}）</div>
+        ${result.dataSource === "mock" ? '<div class="status error" style="margin:0 0 12px">⚠ 未能获取真实行情，本次回测使用模拟数据，结果仅供参考</div>' : ""}
+        ${result.inSampleWarning ? `<div class="status error" style="margin:0 0 12px">⚠ ${esc(result.inSampleWarning)}</div>` : ""}
+        <div class="stats-grid">${statsHtml}</div></div>
       <div class="card"><div class="card-title">净值曲线</div>${curveHtml}</div>
       <div class="kline-card" style="margin:0 0 16px 0">${klineHtml}</div>
       <div class="card"><div class="card-title">交易记录 (前 50 笔)</div>${trades.length ? `<table class="data-table"><thead><tr><th>日期</th><th>方向</th><th>标的</th><th class="num">价格</th><th class="num">数量</th><th class="num">金额</th><th class="num">盈亏</th></tr></thead><tbody>${tradeRows}</tbody></table>` : `<div class="empty-state"><div class="empty-state-text">无交易记录</div></div>`}</div>
@@ -268,6 +292,8 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
       // Bind strategy select
       const stratEl = document.getElementById("bt_strategy");
       if (stratEl) stratEl.addEventListener("change", () => vm.setField("selectedId", stratEl.value));
+      const modelEl = document.getElementById("bt_model");
+      if (modelEl) modelEl.addEventListener("change", () => vm.setField("modelId", modelEl.value));
       const symEl = document.getElementById("bt_symbols");
       if (symEl) {
         symEl.value = state.symbols || "";
