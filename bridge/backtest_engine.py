@@ -142,98 +142,18 @@ def _aggregate_bars(bars, target_period):
 
 
 def fetch_real_bars(symbol, start_date, end_date, dividend_type="front", period="1d"):
-    """\u4ece\u6570\u636e\u5e93\u7f13\u5b58\u6216 xtquant \u83b7\u53d6\u771f\u5b9e\u5386\u53f2\u65e5K\u7ebf\u6570\u636e\uff08\u524d\u590d\u6743\uff09
+    """从统一数据访问层获取真实历史K线（前复权，volume=股）。
 
-    Returns: (bars, error_msg)  bars=None \u65f6 error_msg \u6709\u503c
+    Returns: (bars, source)  bars 为空时 source 说明原因
     """
-    xt_code = _to_xtcode(symbol)
-    if not xt_code:
-        return None, "\u65e0\u6548\u7684\u80a1\u7968\u4ee3\u7801"
-
-    # 周线/月线：xtquant 不直接支持，先取日线再由调用方聚合
-    fetch_period = "1d" if period in ("1w", "1mon") else period
-
-    # 1. \u5148\u67e5\u6570\u636e\u5e93\u7f13\u5b58
-    cached = db_cache.query_bars_by_date(xt_code, fetch_period, start_date, end_date, dividend_type)
-    if cached and len(cached) > 0:
-        db_start = cached[0]["date"]
-        db_end = cached[-1]["date"]
-        if db_start <= start_date and db_end >= end_date:
-            log("\u56de\u6d4b\u4f7f\u7528\u6570\u636e\u5e93\u7f13\u5b58: {} \u6761".format(len(cached)))
-            return cached, None
-
-    # 2. \u7f13\u5b58\u4e0d\u591f\uff0c\u4ece xtquant \u83b7\u53d6
-    custom_path = os.environ.get("XTQUANT_PATH", "")
-    if custom_path and custom_path not in sys.path:
-        sys.path.insert(0, custom_path)
-
-    try:
-        from xtquant import xtdata
-    except ImportError:
-        if cached:
-            log("xtquant \u4e0d\u53ef\u7528\uff0c\u4f7f\u7528\u90e8\u5206\u6570\u636e\u5e93\u7f13\u5b58: {} \u6761".format(len(cached)))
-            return cached, None
-        return None, "xtquant \u4e0d\u53ef\u7528\uff0c\u4f7f\u7528\u6a21\u62df\u6570\u636e"
-
-    port = int(os.environ.get("QMT_PORT", "58610"))
-
-    try:
-        xtdata.connect(port=port)
-    except Exception as e:
-        if cached:
-            log("\u8fde\u63a5 miniQMT \u5931\u8d25\uff0c\u4f7f\u7528\u90e8\u5206\u6570\u636e\u5e93\u7f13\u5b58: {} \u6761".format(len(cached)))
-            return cached, None
-        return None, "\u8fde\u63a5 miniQMT \u5931\u8d25: {}".format(e)
-
-    try:
-        start_time = start_date.replace("-", "")
-        end_time = end_date.replace("-", "")
-
-        xtdata.download_history_data(
-            xt_code, period=fetch_period,
-            start_time=start_time, end_time=end_time,
-            incrementally=True,
-        )
-
-        data = xtdata.get_market_data_ex(
-            [], [xt_code], period=fetch_period,
-            start_time=start_time, end_time=end_time,
-            dividend_type=dividend_type,
-        ) or {}
-
-        df = data.get(xt_code)
-        if df is None or len(df) == 0:
-            if cached:
-                return cached, None
-            return None, "\u65e0\u5386\u53f2\u6570\u636e"
-
-        bars = []
-        for idx, row in df.iterrows():
-            date_str = str(idx)
-            if len(date_str) == 8:
-                date_fmt = date_str[:4] + "-" + date_str[4:6] + "-" + date_str[6:8]
-            else:
-                date_fmt = date_str
-            bars.append({
-                "date": date_fmt,
-                "open": float(row.get("open", 0) or 0),
-                "high": float(row.get("high", 0) or 0),
-                "low": float(row.get("low", 0) or 0),
-                "close": float(row.get("close", 0) or 0),
-                "volume": float(row.get("volume", 0) or 0) * 100,
-            })
-
-        # 3. \u4fdd\u5b58\u5230\u6570\u636e\u5e93
-        if bars:
-            saved = db_cache.save_bars(xt_code, fetch_period, bars, dividend_type)
-            log("\u4fdd\u5b58 {} \u6761\u5230\u6570\u636e\u5e93".format(saved))
-
+    from data import datafeed
+    bars, source = datafeed.fetch_bars(symbol, period=period,
+                                       start_date=start_date, end_date=end_date,
+                                       dividend_type=dividend_type)
+    if bars:
+        log("回测取数来源: {} ({} 条)".format(source, len(bars)))
         return bars, None
-    except Exception as e:
-        if cached:
-            log("xtquant \u83b7\u53d6\u5931\u8d25\uff0c\u4f7f\u7528\u90e8\u5206\u6570\u636e\u5e93\u7f13\u5b58: {} \u6761".format(len(cached)))
-            return cached, None
-        return None, "\u83b7\u53d6\u6570\u636e\u5931\u8d25: {}".format(e)
+    return None, "真实数据不可用（xtquant 未连接或无该标的数据）"
 
 
 
@@ -313,12 +233,28 @@ def run_backtest(params):
         raise ValueError("回测数据不足，请扩大时间范围")
 
     # 生成信号（策略框架：registry 加载 + 逐 bar 调 on_bar，回测与实盘共用同一逻辑）
-    load_all()
+    load_all()  # 含 ML 策略（registry 统一扫描 strategies/ml/builtin）
+
+    # 壳策略：无自身逻辑，按绑定模型（或激活模型）解析出具体 ML 策略
+    if strategy_type == 'shell':
+        from strategies.ml.base import ARCH_STRATEGY_MAP, MLStrategyBase
+        from training.model_registry import ModelRegistry
+        model_id = strategy_params.get('model_id', '')
+        if not model_id:
+            model_id = MLStrategyBase._get_active_model_id()
+        if not model_id:
+            raise ValueError('壳策略需要绑定模型或激活模型才能回测')
+        try:
+            meta = ModelRegistry.get_meta(model_id)
+        except FileNotFoundError:
+            raise ValueError('模型不存在: ' + model_id)
+        strategy_type = ARCH_STRATEGY_MAP.get(meta.get('arch', ''), 'lstm_trend')
+        strategy_params['model_id'] = model_id
+
     try:
         strat_cls = get_strategy(strategy_type)
     except KeyError:
-        log("未知策略类型 {}，回落 ma_cross".format(strategy_type))
-        strat_cls = get_strategy("ma_cross")
+        raise ValueError('未知策略类型: ' + strategy_type)
     strat = strat_cls(strategy_params)
 
     ctx = Context()
@@ -339,93 +275,173 @@ def run_backtest(params):
     log("生成信号 {} 个（策略 {}）".format(len(signal_map), strategy_type))
 
     # 模拟交易 + 逐日计算净值（在同一个循环中完成）
+    # 撮合规则（v2 商业化升级）：
+    #   - T+1：当日买入的股票次日才可卖出（A股制度）
+    #   - 涨跌停：收盘涨停不得买入、收盘跌停不得卖出（按板块幅度判定）
+    #   - tick 取整：成交价按 0.01 取整；数量按 100 股整手
+    #   - 最小佣金：单笔佣金不足 5 元按 5 元计
+    #   - 成交量约束：买入量不超过当日成交量的一定比例（默认 25%）
+    from data import datafeed as _df
+    xt_code = _to_xtcode(symbol)
     cash = initial_capital
     position = 0  # 持仓股数
+    avail_position = 0  # T+1 可卖持仓（当日买入的部分次日解禁）
     cost_price = 0.0
     trades = []
     equity_curve = []
+    skipped_signals = []  # 因涨跌停/T+1/资金不足被跳过的信号（UI 可展示）
 
+    TICK = 0.01
+    MIN_COMMISSION = 5.0
+    MAX_VOL_RATIO = float(params.get("maxVolumeRatio", 0.25))
+    enable_t1 = bool(params.get("enableT1", True))
+
+    def _round_tick(p):
+        return round(round(p / TICK) * TICK, 2)
+
+    def _commission_of(amount):
+        c = amount * commission_rate
+        return max(c, MIN_COMMISSION) if amount > 0 else 0.0
+
+    prev_close = None
     for bar in bars:
         date_str = bar["date"]
         sig = signal_map.get(date_str)
         action = sig.action if sig else None
         target_pos = sig.target_position if sig else None
+        close = bar["close"]
+        limit_up = _df.is_limit_up(xt_code, close, prev_close)
+        limit_down = _df.is_limit_down(xt_code, close, prev_close)
+        # T+1 解禁：新的一天，昨日买入的持仓今日可卖
+        if enable_t1:
+            avail_position = position
 
-        # 目标仓位调仓（支持 target_position 信号；内置策略不触发，走下方 buy/sell）
+        # --- 目标仓位调仓（支持 target_position 信号）---
         if target_pos is not None:
-            total_asset = cash + position * bar["close"]
+            total_asset = cash + position * close
             target_value = total_asset * target_pos
-            target_qty = int(target_value / bar["close"] / 100) * 100
+            target_qty = int(target_value / close / 100) * 100
             if target_qty > position:
                 delta = target_qty - position
-                price = bar["close"] * (1 + slippage_rate)
-                cost = price * delta * (1 + buy_cost_rate)
-                if cost <= cash and delta > 0:
-                    cash -= cost
-                    if position == 0:
-                        cost_price = price
-                    else:
-                        cost_price = (cost_price * position + price * delta) / target_qty
-                    position = target_qty
-                    trades.append({"date": date_str, "side": "buy", "symbol": symbol,
-                                   "price": round(price, 2), "quantity": delta,
-                                   "amount": round(cost, 2), "pnl": None})
+                price = _round_tick(close * (1 + slippage_rate))
+                if limit_up:
+                    skipped_signals.append({"date": date_str, "side": "buy", "reason": "涨停无法买入"})
+                else:
+                    # 成交量约束
+                    max_by_vol = int(bar.get("volume", 0) * MAX_VOL_RATIO / 100) * 100
+                    delta = min(delta, max_by_vol) if max_by_vol > 0 else delta
+                    amount = price * delta
+                    commission = _commission_of(amount)
+                    transfer = amount * transfer_fee
+                    cost = amount + commission + transfer
+                    if cost <= cash and delta > 0:
+                        cash -= cost
+                        if position == 0:
+                            cost_price = price
+                        else:
+                            cost_price = (cost_price * position + price * delta) / target_qty
+                        position = target_qty
+                        if not enable_t1:
+                            avail_position = position
+                        trades.append({"date": date_str, "side": "buy", "symbol": symbol,
+                                       "price": price, "quantity": delta,
+                                       "amount": round(cost, 2), "pnl": None})
+                    elif delta > 0:
+                        skipped_signals.append({"date": date_str, "side": "buy", "reason": "资金不足"})
             elif target_qty < position:
                 delta = position - target_qty
-                price = bar["close"] * (1 - slippage_rate)
-                proceeds = price * delta * (1 - sell_cost_rate)
-                pnl = proceeds - cost_price * delta
-                cash += proceeds
-                position = target_qty
-                if position == 0:
-                    cost_price = 0.0
-                trades.append({"date": date_str, "side": "sell", "symbol": symbol,
-                               "price": round(price, 2), "quantity": delta,
-                               "amount": round(proceeds, 2), "pnl": round(pnl, 2)})
+                sellable = avail_position
+                if limit_down or (enable_t1 and sellable <= 0):
+                    reason = "跌停无法卖出" if limit_down else "T+1限制，当日买入不可卖"
+                    skipped_signals.append({"date": date_str, "side": "sell", "reason": reason})
+                else:
+                    delta = min(delta, sellable)
+                    price = _round_tick(close * (1 - slippage_rate))
+                    amount = price * delta
+                    commission = _commission_of(amount)
+                    proceeds = amount - commission - amount * (stamp_tax + transfer_fee)
+                    pnl = proceeds - cost_price * delta
+                    cash += proceeds
+                    position -= delta
+                    avail_position = min(avail_position, position)
+                    if position == 0:
+                        cost_price = 0.0
+                    trades.append({"date": date_str, "side": "sell", "symbol": symbol,
+                                   "price": price, "quantity": delta,
+                                   "amount": round(proceeds, 2), "pnl": round(pnl, 2)})
 
-        # 执行交易信号（buy/sell，与改造前撮合逻辑完全一致）
+        # --- 执行交易信号（buy/sell）---
         elif action == "buy" and position == 0:
-            price = bar["close"] * (1 + slippage_rate)
-            max_qty = int(cash / (price * (1 + buy_cost_rate)) / 100) * 100
-            if max_qty > 0:
-                cost = price * max_qty * (1 + buy_cost_rate)
-                cash -= cost
-                position = max_qty
-                cost_price = price
-                trades.append({
-                    "date": date_str,
-                    "side": "buy",
-                    "symbol": symbol,
-                    "price": round(price, 2),
-                    "quantity": max_qty,
-                    "amount": round(cost, 2),
-                    "pnl": None,
-                })
+            price = _round_tick(close * (1 + slippage_rate))
+            if limit_up:
+                skipped_signals.append({"date": date_str, "side": "buy", "reason": "涨停无法买入"})
+            else:
+                max_qty = int(cash / (price * (1 + buy_cost_rate)) / 100) * 100
+                # 成交量约束（最小佣金已含在 buy_cost 近似里，此处再精确扣除）
+                max_by_vol = int(bar.get("volume", 0) * MAX_VOL_RATIO / 100) * 100
+                if max_by_vol > 0:
+                    max_qty = min(max_qty, max_by_vol)
+                if max_qty > 0:
+                    amount = price * max_qty
+                    commission = _commission_of(amount)
+                    cost = amount + commission + amount * transfer_fee
+                    # 最小佣金可能使成本超出资金，回退一手
+                    while max_qty > 0 and cost > cash:
+                        max_qty -= 100
+                        amount = price * max_qty
+                        commission = _commission_of(amount)
+                        cost = amount + commission + amount * transfer_fee
+                    if max_qty > 0:
+                        cash -= cost
+                        position = max_qty
+                        if not enable_t1:
+                            avail_position = position
+                        cost_price = price
+                        trades.append({
+                            "date": date_str,
+                            "side": "buy",
+                            "symbol": symbol,
+                            "price": price,
+                            "quantity": max_qty,
+                            "amount": round(cost, 2),
+                            "pnl": None,
+                        })
 
         elif action == "sell" and position > 0:
-            price = bar["close"] * (1 - slippage_rate)
-            proceeds = price * position * (1 - sell_cost_rate)
-            pnl = proceeds - position * cost_price
-            cash += proceeds
-            trades.append({
-                "date": date_str,
-                "side": "sell",
-                "symbol": symbol,
-                "price": round(price, 2),
-                "quantity": position,
-                "amount": round(proceeds, 2),
-                "pnl": round(pnl, 2),
-            })
-            position = 0
-            cost_price = 0.0
+            if limit_down:
+                skipped_signals.append({"date": date_str, "side": "sell", "reason": "跌停无法卖出"})
+            elif enable_t1 and avail_position <= 0:
+                skipped_signals.append({"date": date_str, "side": "sell", "reason": "T+1限制，当日买入不可卖"})
+            else:
+                qty = position if not enable_t1 else min(position, avail_position)
+                price = _round_tick(close * (1 - slippage_rate))
+                amount = price * qty
+                commission = _commission_of(amount)
+                proceeds = amount - commission - amount * (stamp_tax + transfer_fee)
+                pnl = proceeds - qty * cost_price
+                cash += proceeds
+                position -= qty
+                avail_position = min(avail_position, position)
+                trades.append({
+                    "date": date_str,
+                    "side": "sell",
+                    "symbol": symbol,
+                    "price": price,
+                    "quantity": qty,
+                    "amount": round(proceeds, 2),
+                    "pnl": round(pnl, 2),
+                })
+                if position == 0:
+                    cost_price = 0.0
 
         # 计算当日净值（基于当天的实际持仓状态）
-        mv = position * bar["close"] if position > 0 else 0
+        mv = position * close if position > 0 else 0
         total = cash + mv
         equity_curve.append({
             "date": date_str,
             "value": round(total, 2),
         })
+        prev_close = close
 
     # 最终估值
     final_bar = bars[-1]
@@ -467,6 +483,52 @@ def run_backtest(params):
         sharpe = (avg_ret / std_ret * math.sqrt(252)) if std_ret > 0 else 0
     else:
         sharpe = 0
+        avg_ret, std_ret = 0.0, 0.0
+
+    # 年化波动率 & 索提诺比率（下行波动）
+    annual_vol = std_ret * math.sqrt(252) * 100 if daily_returns else 0
+    downside = [r for r in daily_returns if r < 0]
+    downside_std = math.sqrt(sum(r * r for r in downside) / len(downside)) if downside else 0
+    sortino = (avg_ret / downside_std * math.sqrt(252)) if downside_std > 0 else 0
+
+    # 卡玛比率（年化收益 / |最大回撤|）
+    calmar = (annual_return / abs(max_dd)) if max_dd < 0 else 0
+
+    # 平均持仓天数与最大连续亏损
+    hold_days_list = []
+    open_buy = None
+    for t in trades:
+        if t["side"] == "buy":
+            open_buy = t["date"]
+        elif t["side"] == "sell" and open_buy:
+            try:
+                from datetime import datetime as _dt
+                d0 = _dt.strptime(str(open_buy)[:10], "%Y-%m-%d")
+                d1 = _dt.strptime(str(t["date"])[:10], "%Y-%m-%d")
+                hold_days_list.append((d1 - d0).days)
+            except ValueError:
+                pass
+            open_buy = None
+    avg_hold_days = round(sum(hold_days_list) / len(hold_days_list), 1) if hold_days_list else 0
+
+    # 月度收益序列（热力图数据）
+    monthly_returns = []
+    if len(equity_curve) > 1:
+        month_key = None
+        month_start_val = None
+        last_val = None
+        for pt in equity_curve:
+            k = str(pt["date"])[:7]
+            if k != month_key:
+                if month_key is not None and month_start_val is not None and month_start_val > 0:
+                    monthly_returns.append({"month": month_key,
+                                            "return": round((last_val - month_start_val) / month_start_val * 100, 2)})
+                month_key = k
+                month_start_val = pt["value"]
+            last_val = pt["value"]
+        if month_key is not None and month_start_val is not None and month_start_val > 0:
+            monthly_returns.append({"month": month_key,
+                                    "return": round((last_val - month_start_val) / month_start_val * 100, 2)})
 
     # 胜率、盈亏比
     sell_trades = [t for t in trades if t["side"] == "sell" and t.get("pnl") is not None]
@@ -490,22 +552,81 @@ def run_backtest(params):
         "annualReturn": round(annual_return, 2),
         "maxDrawdown": round(max_dd, 2),
         "sharpeRatio": round(sharpe, 2),
+        "sortinoRatio": round(sortino, 2),
+        "calmarRatio": round(calmar, 2),
+        "annualVolatility": round(annual_vol, 2),
+        "avgHoldDays": avg_hold_days,
         "winRate": round(win_rate, 2),
         "profitLossRatio": round(profit_loss_ratio, 2),
         "totalTrades": len(trades),
+        "skippedSignals": len(skipped_signals),
         "finalCapital": round(final_value, 2),
     }
 
-    return {
+    result = {
         "metrics": metrics,
         "trades": trades,
         "equityCurve": equity_curve,
+        "monthlyReturns": monthly_returns,
+        "skippedSignals": skipped_signals[:100],  # 截断防响应过大
         "dataSource": data_source,
         "name": stock_name,
         "symbol": symbol,
         "bars": [{"date": b["date"], "open": b["open"], "high": b["high"],
                    "low": b["low"], "close": b["close"], "volume": b.get("volume", 0)} for b in bars],
     }
+
+    # 样本内回测检测：回测区间与模型训练区间重叠时显著警告
+    try:
+        overlap_warning = None
+        model_id_for_check = strategy_params.get('model_id', '')
+        if model_id_for_check:
+            import training.model_registry as _tmr
+            _mc = os.path.join(_tmr.MODEL_DIR, model_id_for_check, 'config.json')
+            if os.path.exists(_mc):
+                with open(_mc, encoding='utf-8') as f:
+                    _cfg = json.load(f)
+                dr = _cfg.get('data_date_range') or {}
+                ts, te = dr.get('start', ''), dr.get('end', '')
+                if ts and te:
+                    if not (end_date < ts or start_date > te):
+                        overlap_warning = ("样本内回测：回测区间 {}~{} 与模型训练区间 {}~{} 重叠，"
+                                           "结果会显著偏乐观，仅用于调试".format(
+                                               start_date, end_date, ts, te))
+        result["inSampleWarning"] = overlap_warning
+    except Exception:
+        result["inSampleWarning"] = None
+
+    # 回测结果持久化（含配置快照，供历史对比 A/B）
+    try:
+        result_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                  'data', 'backtest_results')
+        os.makedirs(result_dir, exist_ok=True)
+        bt_id = 'bt_' + str(int(time.time() * 1000))
+        snapshot = {
+            "id": bt_id,
+            "createdAt": time.strftime('%Y-%m-%dT%H:%M:%S'),
+            "symbol": symbol,
+            "strategy": strategy_type,
+            "strategyParams": {k: v for k, v in strategy_params.items()
+                               if k not in ('model_id',)} | {"modelId": strategy_params.get('model_id', '')},
+            "startDate": start_date,
+            "endDate": end_date,
+            "period": period,
+            "dividendType": dividend_type,
+            "initialCapital": initial_capital,
+            "commission": commission_rate,
+            "slippage": slippage_rate,
+            "dataSource": data_source,
+            "metrics": metrics,
+        }
+        with open(os.path.join(result_dir, bt_id + '.json'), 'w', encoding='utf-8') as f:
+            json.dump(snapshot, f, indent=2, ensure_ascii=False)
+        result["backtestId"] = bt_id
+    except Exception as e:
+        log("回测结果持久化失败（不影响本次结果）: {}".format(e))
+
+    return result
 
 
 # ----------------------------------------------------------------------
