@@ -76,6 +76,28 @@ class MyStrategy(StrategyBase):
     return am.model_id || "";
   }
 
+  /** 模型列表项（/models 返回的 meta）展示名 */
+  function modelName(m) {
+    if (!m) return "";
+    if (m.name && m.name !== "unnamed") return m.name;
+    if (m.arch) {
+      var ts = (m.created_at || "").slice(0, 10);
+      return m.arch + (ts ? " · " + ts : "");
+    }
+    return m.model_id || "";
+  }
+
+  /** 绑定模型下拉（ML/壳策略）：空值 = 跟随激活模型 */
+  function renderModelSelect(state, selectedModelId) {
+    const models = state.models || [];
+    const opts = ['<option value="" ' + (!selectedModelId ? "selected" : "") + ">跟随激活模型</option>"]
+      .concat(models.map((m) => '<option value="' + escapeHtml(m.model_id) + '" ' + (selectedModelId === m.model_id ? "selected" : "") + ">" + escapeHtml(modelName(m)) + "</option>"))
+      .join("");
+    const footer = models.length ? "" : '<div style="font-size:11px;color:var(--text-3);margin-top:-6px;margin-bottom:8px">暂无可用模型，请先在模型管理页训练</div>';
+    return '<div class="form-group"><label class="form-label">绑定模型</label>' +
+      '<select class="input-field" id="st_model">' + opts + "</select></div>" + footer;
+  }
+
   /** 从 state.strategyTypes 取展示名，fallback 到 TYPE_LABELS */
   function getTypeLabel(state, type) {
     const t = (state.strategyTypes || []).find((x) => x.name === type);
@@ -89,33 +111,34 @@ class MyStrategy(StrategyBase):
   function renderParamsForm(state, currentParamsStr) {
     const types = state.strategyTypes || [];
     const type = types.find((t) => t.name === state.editing.type);
-    const schema = (type && type.params_schema) || [];
+    // 无 schema 时 fallback 到 JSON textarea
+    let schema = (type && type.params_schema) || [];
     let current = {};
     try { current = JSON.parse(currentParamsStr || "{}"); } catch (e) {}
 
     const isShell = type && type.is_shell;
     const isML = type && type.is_ml;
     let mlHint = "";
-    if (isShell) {
+    let modelSelect = "";
+    if (isShell || isML) {
+      modelSelect = renderModelSelect(state, state.editing.modelId || "");
       const am = state.activeModel;
       if (am && am.model_id) {
-        mlHint = '<div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text-2)">壳策略：将自动使用激活模型：<strong style="color:var(--accent-hover)">' + escapeHtml(modelDisplayName(am)) + '</strong> 计算信号</div>';
+        mlHint = '<div style="font-size:11px;color:var(--text-3);margin:-6px 0 8px">不绑定时自动使用激活模型：<strong>' + escapeHtml(modelDisplayName(am)) + '</strong></div>';
       } else {
-        mlHint = '<div style="background:rgba(239,68,68,.08);border:1px solid var(--red);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text-2)">壳策略：未激活模型。请先在模型管理页激活一个模型。</div>';
+        mlHint = '<div style="font-size:11px;color:var(--red);margin:-6px 0 8px">当前未激活模型，' + (isShell ? "壳策略" : "ML 策略") + "必须绑定一个模型才能运行</div>";
       }
-      return mlHint;
     }
     if (isML) {
-      const am = state.activeModel;
-      if (am && am.model_id) {
-        mlHint = '<div style="background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text-2)">ML 策略：model_id 留空将自动使用激活模型：<strong style="color:var(--accent-hover)">' + escapeHtml(modelDisplayName(am)) + '</strong></div>';
-      } else {
-        mlHint = '<div style="background:rgba(239,68,68,.08);border:1px solid var(--red);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--text-2)">ML 策略：未激活模型。请在模型管理页激活一个模型，或在下方填写 model_id。</div>';
-      }
+      // model_id 由「绑定模型」下拉统一管理，隐藏 schema 中的同名文本框
+      schema = schema.filter((p) => p.key !== "model_id");
+    }
+    if (isShell) {
+      return modelSelect + mlHint;
     }
 
     if (!schema.length) {
-      return mlHint + '<div class="form-group"><label class="form-label">策略参数 (JSON)</label>' +
+      return modelSelect + mlHint + '<div class="form-group"><label class="form-label">策略参数 (JSON)</label>' +
         '<textarea class="input-field" id="st_params" style="font-family:monospace;font-size:13px;min-height:80px">' + escapeHtml(currentParamsStr) + '</textarea></div>';
     }
 
@@ -140,7 +163,7 @@ class MyStrategy(StrategyBase):
         '<input class="input-field" id="st_param_' + escapeHtml(p.key) + '" type="text" value="' + escapeHtml(String(val)) + '" /></div>' + (p.description ? '<div style="font-size:11px;color:var(--text-3);margin-top:-6px;margin-bottom:8px">' + escapeHtml(p.description) + '</div>' : '');
     }).join("");
 
-    return mlHint + '<div class="form-group"><label class="form-label">策略参数</label></div>' + fields +
+    return modelSelect + mlHint + '<div class="form-group"><label class="form-label">策略参数</label></div>' + fields +
       '<input type="hidden" id="st_param_keys" value="' + escapeHtml(schema.map((p) => p.key + ":" + p.type).join(",")) + '" />';
   }
 
@@ -186,9 +209,20 @@ class MyStrategy(StrategyBase):
       const runBtn = isRunning
         ? '<button class="btn btn-danger btn-sm" data-action="stop" data-id="' + escapeHtml(s.id) + '">停止</button>'
         : '<button class="btn btn-primary btn-sm" data-action="start" data-id="' + escapeHtml(s.id) + '">启动</button>';
+      const tmeta = (state.strategyTypes || []).find((t) => t.name === s.type);
+      let modelInfo = "";
+      if (tmeta && (tmeta.is_ml || tmeta.is_shell)) {
+        if (s.modelId) {
+          const m = (state.models || []).find((x) => x.model_id === s.modelId);
+          modelInfo = '<div style="font-size:11px;color:var(--text-3);margin-top:2px">模型: ' + escapeHtml(m ? modelName(m) : s.modelId) + "</div>";
+        } else {
+          const am = state.activeModel;
+          modelInfo = '<div style="font-size:11px;color:var(--text-3);margin-top:2px">模型: 跟随激活' + (am && am.model_id ? "（" + escapeHtml(modelDisplayName(am)) + "）" : "") + "</div>";
+        }
+      }
       return '<tr>' +
         '<td><strong>' + escapeHtml(s.name) + '</strong>' + runInfo + '</td>' +
-        '<td>' + escapeHtml(getTypeLabel(state, s.type)) + '</td>' +
+        '<td>' + escapeHtml(getTypeLabel(state, s.type)) + modelInfo + '</td>' +
         '<td style="font-size:12px;color:var(--text-3)">' + escapeHtml((s.symbols && s.symbols.length) ? s.symbols.join(", ") : "—") + '</td>' +
         '<td>' + statusBadge + '</td>' +
         '<td>' + escapeHtml(new Date(s.updatedAt).toLocaleDateString("zh-CN")) + '</td>' +
@@ -331,6 +365,7 @@ class MyStrategy(StrategyBase):
         return JSON.stringify(risk);
       })(),
       customMode: customMode,
+      modelId: (function () { var el = document.getElementById("st_model"); return el ? el.value : ""; })(),
       code: (function() { var el = document.getElementById("st_code"); return el ? el.value : ""; })(),
       originalCode: (function() { var el = document.getElementById("st_original_code"); return el ? el.value : ""; })(),
     };

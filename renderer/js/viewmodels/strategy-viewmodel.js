@@ -10,6 +10,7 @@ class StrategyViewModel {
       list: [],
       executorStatus: {},
       strategyTypes: [],
+      models: [],
       exportedScript: null,
       exportedName: null,
       loading: false,
@@ -46,6 +47,7 @@ class StrategyViewModel {
       await this.loadExecutorStatus();
       await this.loadStrategyTypes();
       this.loadActiveModel();
+      this.loadModels();
     } catch (e) {
       this._set({ loading: false, error: e.message });
     }
@@ -80,6 +82,17 @@ class StrategyViewModel {
       const resp = await this.facade.modelServer.getActiveModel();
       if (resp.ok && resp.data) {
         this._set({ activeModel: resp.data });
+      }
+    } catch {}
+  }
+
+  /** 加载模型列表（供 ML/壳策略绑定模型下拉） */
+  async loadModels() {
+    try {
+      if (!this.facade.modelServer || !this.facade.modelServer.listModels) return;
+      const resp = await this.facade.modelServer.listModels();
+      if (resp.ok && Array.isArray(resp.data)) {
+        this._set({ models: resp.data });
       }
     } catch {}
   }
@@ -154,6 +167,7 @@ class StrategyViewModel {
         description: "",
         type: first.name,
         params: JSON.stringify(defaultParams, null, 2),
+        modelId: "",
         risk: JSON.stringify({ stopLoss: 0.05, stopProfit: 0.15, maxOrderAmount: 500000, maxDailyTrades: 10, maxPositionRatio: 0.3 }, null, 2),
         status: "draft",
         customMode: false,
@@ -193,6 +207,7 @@ class StrategyViewModel {
         description: strategy.description || "",
         type: strategy.type,
         params: JSON.stringify(strategy.params || {}, null, 2),
+        modelId: strategy.modelId || "",
         risk: JSON.stringify(strategy.risk || {}, null, 2),
         status: strategy.status,
         code: "",
@@ -228,6 +243,7 @@ class StrategyViewModel {
         description: s.description || "",
         type: s.type,
         params: JSON.stringify(s.params || {}, null, 2),
+        modelId: s.modelId || "",
         risk: JSON.stringify(s.risk || {}, null, 2),
         status: "draft",
         customMode: false,
@@ -283,6 +299,7 @@ class StrategyViewModel {
       description: form.description.trim(),
       type: strategyType,
       params,
+      modelId: (form.modelId || "").trim(),
       risk,
       status: form.status,
     };
