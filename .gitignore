@@ -50,3 +50,15 @@ data/strategies/
 
 # Model artifacts (binary weights)
 data/models/
+
+# UI 调试临时产物（离屏截图脚本/预览页/截图输出）
+preview.html
+preview_tooltip.png
+preview_shot.png
+dark_card.png
+shot.js
+shot2.js
+_chk.js
+_p.js
+_screencap.js
+_tmp_screenshot.js
