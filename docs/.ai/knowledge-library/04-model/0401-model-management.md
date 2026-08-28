@@ -100,6 +100,54 @@ class LSTMModel(nn.Module):
 | LSTM | models/lstm.py | 多层 LSTM，适用于时序预测 |
 | Transformer | models/transformer.py | 含 PositionalEncoding，注意力机制 |
 | MLP | models/mlp.py | 多层感知机，基线模型 |
+| GBDT | models/gbdt.py | sklearn HistGradientBoosting 表格强基线（D3.3，v0.1.23） |
+
+### GBDT 表格基线（D3.3，v0.1.23）
+
+- 实现：`strategies/ml/models/gbdt.py` 的 `GBDTModel`，基于 **sklearn `HistGradientBoostingClassifier`**（LightGBM 的免依赖替代，CPU 友好、小样本稳健）。
+- 输入 `(n, seq_len, n_features)` → 展平为 `(n, seq_len*n_features)`；仅支持分类任务（回归请用 torch 模型）。
+- `predict_proba` 返回类别概率（与标签 0=sell/1=flat/2=buy 对齐，缺失类别补零）；`forward` 返回概率张量（`output_is_probability=True`，上层跳过 softmax）。
+- **持久化**：`ModelRegistry` 按 `config.model_type == 'sklearn'` 走 pickle 整体保存（`model.pkl`），加载时包 `SklearnModelWrapper`（与 `DummyModelWrapper` 并列的非 torch 路径）。
+- **训练**：`Trainer` 对 `is_sklearn` 模型跳过 torch 训练循环，直接 fit + 验证集准确率 + 体检报告（`_health_report_sklearn` 与 torch 版共用 `_score_health` 评分逻辑）。
+- **策略**：`strategies/ml/builtin/gbdt_classifier.py`（`gbdt_classifier`），`ARCH_STRATEGY_MAP['gbdt']='gbdt_classifier'`，interpret 直接消费概率（不 softmax）。
+- UI 模型页架构下拉已含 GBDT。
+
+> 测试注意：本机环境在 sklearn 载入/训练后，同进程后续 torch 训练测试会异常变慢（环境性问题）——GBDT 测试放在 `tests/zz_gbdt/`（排序最后）执行。
+
+## 期望收益决策（D3.5，v0.1.24）
+
+替换 ML 策略的粗糙 `margin` 三分类判决，改为**期望收益语义**（`strategies/ml/base.py`）：
+
+```
+ev = P(up) × up_return − P(down) × down_return − roundtrip_cost
+```
+
+- **触发条件**：方向为最大类（P(up) 同时 > flat 与 down，或 P(down) 同时 > flat 与 up）且净期望收益覆盖阈值（`ev > min_ev` / `ev < −min_ev`）。
+- **期望幅度来源**：策略参数 `upReturn`/`downReturn`（0=自动）→ 从模型 `label_config` 推导（classification → ±threshold；triple_barrier → ±up/down）。
+- **策略参数**（4 个 ML 策略共用，UI 参数表单自动生成）：
+
+| 参数 | 默认 | 语义 |
+|---|---|---|
+| `upReturn` | 0 | 判"涨"时的期望幅度（0=自动用训练标签阈值） |
+| `downReturn` | 0 | 判"跌"时的期望幅度（0=自动用训练标签阈值） |
+| `roundtripCost` | 0.003 | 一次往返交易成本，期望收益需覆盖它才触发 |
+| `minEv` | 0 | 净期望收益额外阈值（0=覆盖成本即可） |
+
+- 信号 reason 含「期望收益+x.xxx%」，indicators 含 `ev`（净期望收益），`strength` = 方向概率（供 D2.2 强度缩放仓位）。
+- **意义**：把"概率差多少才交易"变成"期望收益是否覆盖成本才交易"——交易次数自动与成本结构对齐，低置信/高成本场景自动减少交易（直接改善"交易越多亏越多"）。
+- 概率校准（temperature scaling，用验证集拟合）列为后续增强项（D3.5 可选部分）。
+
+## Walk-forward 滚动样本外评估（D3.4，v0.1.25）
+
+`Trainer.walk_forward(config, n_segments=3)`：数据按时间等分 `n_segments` 段，对每段 i≥1 用「该段之前」的数据重训模型、该段做**样本外评估**（不参与训练），输出各段准确率的均值/方差与稳定性结论。
+
+- **无前视**：折叠训练区间必在测试区间之前（`test_walk_forward_folds_are_out_of_sample` 验证）。
+- **实现**：折叠训练复用 `self.train()`（`save_model=False` / `return_model=True`，不落盘）；全部子训练统一区间模式保证数据同源；预测兼容 torch 与 sklearn（`_predict_labels`）；方向 F1 用 `_class_f1`。
+- **触发**：训练配置 `walk_forward: true`（`walk_forward_segments` 默认 3）时，主训练完成后自动运行并随结果返回 `walk_forward` 报告；主模型照常落盘，折叠模型不落盘。
+- **报告**：`{folds, meanAccuracy, stdAccuracy, nFolds, stable, verdict, summary}`；`stdAccuracy ≤0.05 且 mean ≥0.4` → green。
+- **链路**：UI 训练表单「walk-forward 稳健性验证」复选框 + 段数 → model-server `_normalize_train_config` 透传 → 训练结果卡片展示稳定性徽章/摘要/折叠表。
+- 仅支持分类标签（classification / triple_barrier）；数据量不足（每段 <20 根）或回归标签时报错（主训练不阻断，错误记入 `walk_forward_error`）。
+- **意义**：把"样本外稳健性"从诊断工具（D4.2）升级为训练流程本身——各段准确率方差大 = 过拟合信号，是模型能否进入实盘验证的关键门槛之一。
 
 ## 特征工程
 
@@ -123,6 +171,7 @@ class LSTMModel(nn.Module):
 ### Trainer
 
 - 数据获取：`DataFetcher` 接口（`XtdataDataFetcher` / `MockDataFetcher`）；**无数据的标的自动跳过并记录**（结果 `symbols`/`skipped_symbols` 字段，config.json 只保留实际用于训练的标的）
+  - **两种取数模式**：`fetch_bars(symbol, period, count)` 按数量取最近 N 根；`fetch_bars_range(symbol, period, start_date, end_date)` 按起止日期区间取数。`trainer.train` 在 `data.start_date`/`end_date` 同时存在时走区间模式，否则走 count 模式。两者都经统一 `datafeed`，口径（volume=股、front_ratio 前复权比例版）完全一致
 - 数据集：`FinancialDataset`（多标的滑动窗口）
 - 标签：classification / regression / triple_barrier
 - 训练循环：前向传播 → 损失 → 反向传播 → 优化器步骤
@@ -257,9 +306,11 @@ executor tick -> 获取K线 -> modelService.computeSignal() -> HTTP /signal -> �
 
 - 服务状态卡片（状态灯 + 端口 + 刷新）
 - 模型列表表格（名称/架构/创建时间/标的/状态/操作）
-- 训练表单（标的/周期/数据量/架构/超参数/标签类型）
+- 训练表单（标的/周期/训练范围/数据量/起止日期/架构/超参数/标签类型）
   - **标的输入复用 `StockSearch` 多选模式**（`renderer/js/views/stock-search.js`）：与回测页/策略启动一致，输入代码/名称/拼音联想下拉，选中即以 `, ` 追加为逗号分隔的多标的标签式输入，支持删除重选
-  - **每个字段末尾带圆形轮廓问号角标**（`.form-hint`，`vertical-align:super` 上标、悬浮不改变鼠标指针，悬浮/聚焦显示 `FIELD_TIPS` 中该指标的意义/用途/范围说明）
+  - **训练范围（rangeMode）**：`count` 按数量取最近 N 根K线 / `date` 按起止日期区间取数（对齐多标的时间窗）。切到 `date` 模式时隐藏数据量、显示起止日期；ViewModel 校验起止日期必填且 start ≤ end，随训练请求传 `start_date`/`end_date`
+  - **每个字段末尾带圆形轮廓问号角标**（`.form-hint`，`vertical-align:super` 上标、悬浮不改变鼠标指针，悬浮/聚焦显示 `FIELD_TIPS` 中该指标的意义/用途/范围/注意事项）
+  - **数字输入框隐藏上下步进按钮**：`app.css` 统一 `input[type=number]` 移除 spinner（`-webkit-appearance:none` + 隐藏 `::-webkit-inner-spin-button`），训练表单与回测配置的数字框都不再显示上下箭头
 - **训练状态（进度条 + 阶段文本）**：进度实时更新——`Trainer.train` 通过 `on_progress(progress, stage)` 回调，`TrainPipeline._update` 写入 `task.progress/stage`（fetch 数据加载 → build 构建数据集 → train 按 epoch 推进 20%~95% → save 保存模型 → done 100%）；`get_status` 返回 `{status, progress, stage}`，UI 轮询显示阶段与百分比
 - 策略列表
 
@@ -273,11 +324,31 @@ executor tick -> 获取K线 -> modelService.computeSignal() -> HTTP /signal -> �
 
 `bridge/data/datafeed.py` 是全项目**唯一**的行情取数入口（trainer / backtest_engine / model_server 全部经由此模块），严禁绕过它直接调 xtquant：
 
-- **统一口径**：volume=股（内部 ×100）、`dividend_type='front'` 默认前复权、UI码/xt码转换、bar 字段 `{date, open, high, low, close, volume}`
-- **口径指纹**：`data_fingerprint(dividend_type)` 返回口径摘要哈希。训练时写入模型 config.json 的 `data_fingerprint`；`MLStrategyBase.on_after_init` 加载模型时用 `check_fingerprint()` 校验，不一致直接报错（防静默口径漂移——「回测无交易」事故的根因防线）。`DATA_SPEC_VERSION` 改口径时必须 +1
+- **统一口径**：volume=股（内部 ×100）、`dividend_type='front_ratio'` 默认前复权比例版、UI码/xt码转换、bar 字段 `{date, open, high, low, close, volume}`
+  - **为什么用 front_ratio（v0.1.16 修复）**：`front`（前复权）对早期历史数据（如茅台 2001-2016）会复权出**负/零价格**（60% 坏数据），导致训练样本被污染/不足、模型退化为单边预测。`front_ratio`（前复权比例版）无此 bug，且价格与 front 几乎一致（差异 <0.2%），全链路（训练/回测/推理/实盘）统一用它
+  - `_df_to_bars` 增加**清洗**：丢弃价格 ≤0/NaN 的 bar，脏数据不再写入缓存或进入训练集
+- **口径指纹**：`data_fingerprint(dividend_type)` 返回口径摘要哈希（`DATA_SPEC_VERSION=3`）。训练时写入模型 config.json 的 `data_fingerprint`；`MLStrategyBase.on_after_init` 加载模型时用 `check_fingerprint()` 校验，不一致直接报错（防静默口径漂移——「回测无交易」事故的根因防线）。`DATA_SPEC_VERSION` 改口径时必须 +1
 - **数据质量校验**：`validate_bars()` 检查零价/OHLC交叉/>15自然日缺口，返回问题列表；`summary()` 输出体检摘要（日期范围/缺失天数/涨跌停bar占比）
 - **涨跌停判定**：`is_limit_up/is_limit_down(xt_code, close, prev_close)`，按板块幅度（主板10%/创业科创20%/北交30%）
 - **mock 回落**：`fetch_bars_or_mock()` 仅供回测用，mock bars 带 `is_mock=True` 标记；训练路径**不回落 mock**（避免模拟数据污染训练集）
+
+### 数据健康监控 + 全市场同步（D1.4，v0.1.26）
+
+轻量版数据地基（无 DuckDB/parquet 新依赖）：
+
+- **`datafeed.coverage_report(ref_date=None, days_back=7)`**：数据健康/覆盖率报告——股票总数/已覆盖数/覆盖率、分市场统计（SH/SZ/BJ/US）、缓存最新日期、陈旧标的数、人话问题列表（覆盖率过低/数据陈旧/股票列表为空）。
+- **`datafeed.sync_market(limit=None, period='1d', progress=None)`**：全市场日线增量同步——遍历 stocks 表逐标的走 `fetch_bars` 更新缓存（幂等，单标的失败记入 `errors` 不中断），返回 `{total, synced, skipped, updated_bars, errors}`。
+- **CLI**：`python bridge/market_sync.py [--limit N] [--period 1d]`（需 miniQMT 连接）。
+- 底层依赖 `db.get_kline_coverage()`（日线 front_ratio 缓存覆盖摘要）。
+
+> 数据是模型上限的前提：覆盖率低/数据陈旧应先跑全市场同步再谈训练，避免"训练数据不完整"导致模型质量虚低或误判。
+
+## 日志与诊断（D6，v0.1.27）
+
+- **`bridge/_logging.py`（D6.1）**：轻量日志落盘——`data/logs/{module}.log`，带时间/级别/模块，超 5MB 轮转保留 `.1`；只写文件与 stderr（不碰 stdout，不影响 JSON-RPC）；任何日志失败静默降级。`backtest_engine.log()` 已接入（`data/logs/backtest.log`）。
+- **`bridge/diagnose.py`（D6.2）**：一键诊断包导出——收集 `data/logs`、`config/default.json`、运行环境摘要（`env.json`，不含密钥）、最近 20 条回测摘要 → `data/diagnostics/diagnose_*.zip`。
+  - CLI：`python bridge/diagnose.py`；Python API：`diagnose.build_diagnostic_package()`。
+  - 用于排查/支持：拿到诊断包即可还原运行环境与近期回测行为。
 
 ## 特征工程 2.0（v0.1.16，M3.1）
 
