@@ -52,7 +52,7 @@ data/strategies/
 # Model artifacts (binary weights)
 data/models/
 
-# UI ������ʱ���������ͼ�ű�/Ԥ��ҳ/��ͼ�����
+# UI 调试临时产物（截图脚本/预览页/截图输出）
 preview.html
 preview_tooltip.png
 preview_shot.png
@@ -64,5 +64,5 @@ _p.js
 _screencap.js
 _tmp_screenshot.js
 
-# ��ϰ�����������ʱ���
+# 练习/调试临时产物
 data/diagnostics/
