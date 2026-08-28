@@ -79,8 +79,8 @@ renderer/                        main/                           bridge/
 - **无副作用原则**：渲染层除 `bootstrap.js` 外的文件不碰 DOM，直到 bootstrap 执行。
 - **新增行情功能时**，遵循分层：新 IPC 通道要在 `preload.js` 暴露 + `ipc/index.js` 注册 + Service 编排，不要在 IPC 层或 preload 写业务。
 - **auto 模式回落**：`createDataSource({mode:"auto"})` 会 try QMT init，失败后静默回落 mock。调试时注意控制台 `[datasource]` 日志区分实际数据源。
-- **策略统一**：策略信号计算统一在 `bridge/strategies/`（Python），回测引擎与实盘执行器调用**同一个 `on_bar`**，Node 侧不再写策略逻辑（`main/strategies/ma_cross.js` 已 deprecated）。新增策略 = UI 编写代码自动注册（`strategy.add` RPC，保存即生效无需重启），或丢 `.py` 到 `data/strategies/user/`。所有策略（含内置）均可编辑源码（`strategy.get_code` 获取 + `strategy.add` 覆盖），列表支持复制实例。策略 RPC 走独立 strategyBridge（不依赖行情数据源，mock 模式也可用）。UI 据 `params_schema` 自动生成参数表单。
-- **策略导出**：`strategy.export` RPC 用适配壳包装，把策略类源码原样嵌入 QMT 单文件脚本（init/handlebar/stop 壳 + Context 适配层），粘到 QMT 客户端即可运行。
+- **策略统一**：策略信号计算统一在 `bridge/strategies/`（Python），回测引擎与实盘执行器调用**同一个 `on_bar`**，Node 侧不再写策略逻辑（`main/strategies/ma_cross.js` 已 deprecated）。新增策略 = UI 编写代码自动注册（`strategy.add` RPC，保存即生效无需重启），或丢 `.py` 到 `data/strategies/user/`。所有策略（含内置）均可编辑源码（`strategy.get_code` 获取 + `strategy.add` 覆盖），列表支持复制实例。策略 RPC 走独立 strategyBridge（不依赖行情数据源，mock 模式也可用）。UI 据 `params_schema` 自动生成参数表单。策略导出（`strategy.export` RPC）用适配壳包装，把策略类源码原样嵌入 QMT 单文件脚本（init/handlebar/stop 壳 + Context 适配层），粘到 QMT 客户端即可运行。
+- **日内做T（v0.1.28）**：`period` 为分钟周期（1m/5m/...）时回测自动走日内路径（`_run_intraday_backtest`）。核心概念：**lot 批次仓位**（底仓 core / T仓 t 分层，`basePositionShares` 首日自动建底仓）、**交易日粒度 T+1**（lot.available_day）、**昨收涨跌停基准**、**尾盘 14:55 强平 T 仓还原底仓**（forceEodClose）。策略侧用 `ctx.bars_by_period`（多周期无前视切片 `slice_upto`）、`ctx.intraday_vwap()`（分时均线）、`Signal(qty, lot_tag)` 表达做T意图；撮合层把反向T（先卖core后买t）自动结转为底仓还原。绩效分账 `metrics.intraday`（tPnl/corePnl/tRounds...），不变量 `tPnl+corePnl≈总盈亏`。内置策略 `intraday_t`。分钟数据注意：xtquant 分钟必须 `download_history_data` 后才能读（datafeed 已处理）；分钟缓存完整性判断按 `date[:10]` 归一。
 
 ## 项目结构
 
@@ -106,7 +106,7 @@ mooquant/
 │   │   ├── base.py               # StrategyBase + Signal + Context（跨平台接口）
 │   │   ├── indicators.py         # 指标库（MA/EMA/MACD/RSI/KDJ/BOLL）
 │   │   ├── registry.py           # 自动扫描注册（builtin/ + data/strategies/user/）
-│   │   ├── builtin/              # 内置策略（ma_cross/momentum/mean_reversion）
+│   │   ├── builtin/              # 内置策略（ma_cross/momentum/mean_reversion/portfolio_equal_weight）
 │   │   └── exporters/            # 平台导出器（qmt_exporter 适配壳包装）
 │   ├── requirements.txt          # xtquant>=1.0
 │   └── README.md

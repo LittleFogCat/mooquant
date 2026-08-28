@@ -55,8 +55,98 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
           <div class="form-group"><label class="form-label">初始资金</label><input class="input-field" type="number" id="bt_capital" value="${state.initialCapital}" /></div>
           <div class="form-group"><label class="form-label">手续费率</label><input class="input-field" type="number" step="0.0001" id="bt_commission" value="${state.commission}" /></div>
           <div class="form-group"><label class="form-label">滑点</label><input class="input-field" type="number" step="0.001" id="bt_slippage" value="${state.slippage}" /></div>
+          <div class="form-group"><label class="form-label">K线周期</label>
+            <select class="input-field" id="bt_period">
+              <option value="1d" ${state.period === "1d" ? "selected" : ""}>日线（隔夜策略）</option>
+              <option value="1m" ${(state.period || "1m") === "1m" && state.period !== "1d" ? "selected" : ""}>1分钟（日内做T）</option>
+              <option value="5m" ${state.period === "5m" ? "selected" : ""}>5分钟（日内）</option>
+              <option value="15m" ${state.period === "15m" ? "selected" : ""}>15分钟（日内）</option>
+              <option value="30m" ${state.period === "30m" ? "selected" : ""}>30分钟（日内）</option>
+              <option value="60m" ${state.period === "60m" ? "selected" : ""}>60分钟（日内）</option>
+            </select>
+          </div>
         </div>
+        ${state.period && state.period !== "1d" ? `
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">底仓股数 <span style="color:var(--text-3);font-size:11px">（做T需先有底仓，回测首日以开盘价自动建立）</span></label><input class="input-field" type="number" step="100" id="bt_basePositionShares" value="${state.basePositionShares}" /></div>
+          <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px">
+            <label class="form-label" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="bt_forceEodClose" ${state.forceEodClose ? "checked" : ""} /> 尾盘 14:55 强制平T仓（还原底仓）
+            </label>
+          </div>
+          <div class="form-group" style="align-self:flex-end;font-size:12px;color:var(--text-3)">日内回测建议区间 ≤ 3 个月；分钟数据需在 QMT 客户端下载</div>
+        </div>` : ""}
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">撮合口径</label>
+            <select class="input-field" id="bt_fillModel">
+              <option value="next_open" ${state.fillModel === "next_open" ? "selected" : ""}>次日开盘成交（保守，推荐）</option>
+              <option value="close" ${state.fillModel === "close" ? "selected" : ""}>收盘价成交（乐观）</option>
+            </select>
+          </div>
+          <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px">
+            <label class="form-label" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="bt_allowMock" ${state.allowMock ? "checked" : ""} /> 允许使用模拟数据
+            </label>
+          </div>
+          <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px">
+            <label class="form-label" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="bt_robustness" ${state.robustness ? "checked" : ""} /> 稳健性分析
+            </label>
+          </div>
+        </div>
+        <details style="margin:12px 0">
+          <summary style="cursor:pointer;color:var(--text-3);font-size:13px">风控与仓位（高级，默认关闭）</summary>
+          <div class="form-row" style="margin-top:10px">
+            <div class="form-group"><label class="form-label">止损比例</label><input class="input-field" type="number" step="0.01" id="bt_stopLoss" value="${state.stopLoss}" /></div>
+            <div class="form-group"><label class="form-label">止盈比例</label><input class="input-field" type="number" step="0.01" id="bt_takeProfit" value="${state.takeProfit}" /></div>
+            <div class="form-group"><label class="form-label">最大持仓天数</label><input class="input-field" type="number" step="1" id="bt_maxHoldDays" value="${state.maxHoldDays}" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">连续亏损熔断</label><input class="input-field" type="number" step="1" id="bt_maxConsecLosses" value="${state.maxConsecLosses}" /></div>
+            <div class="form-group"><label class="form-label">熔断冻结天数</label><input class="input-field" type="number" step="1" id="bt_cooldownDays" value="${state.cooldownDays}" /></div>
+            <div class="form-group"><label class="form-label">单笔最大仓位</label><input class="input-field" type="number" step="0.05" id="bt_maxPositionPct" value="${state.maxPositionPct}" /></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px">
+              <label class="form-label" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="bt_strengthScaling" ${state.strengthScaling ? "checked" : ""} /> 按信号强度缩放仓位
+              </label>
+            </div>
+            <div class="form-group" style="align-self:flex-end;font-size:12px;color:var(--text-3)">0 = 关闭；止损/止盈/时间止损按持仓成本与持有天数触发</div>
+          </div>
+          <div class="form-row" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
+            <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px">
+              <label class="form-label" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="bt_regimeEnabled" ${state.regimeEnabled ? "checked" : ""} /> 市场状态过滤（仅指数站上均线时做多）
+              </label>
+            </div>
+            <div class="form-group"><label class="form-label">指数代码</label><input class="input-field" id="bt_regimeIndex" value="${esc(state.regimeIndex)}" /></div>
+            <div class="form-group"><label class="form-label">指数均线周期</label><input class="input-field" type="number" step="1" id="bt_regimeFast" value="${state.regimeFast}" /></div>
+            <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px">
+              <label class="form-label" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="bt_regimeOwnMa" ${state.regimeOwnMa ? "checked" : ""} /> 个股也需站上均线
+              </label>
+            </div>
+          </div>
+        </details>
         <button class="btn btn-primary" id="bt_run" ${state.running ? "disabled" : ""}>${state.running ? "回测中..." : "开始回测"}</button>
+        ${renderProgress(state)}
+      </div>
+    `;
+  }
+
+  function renderProgress(state) {
+    if (!state.running || !state.progress) return "";
+    const p = state.progress;
+    const val = Math.max(0, Math.min(100, Number(p.progress) || 0));
+    const stageLabel = { fetch: "加载数据", signal: "生成信号", match: "撮合交易", finish: "计算指标", start: "开始回测" }[p.stage] || "回测中";
+    return `
+      <div style="margin-top:16px">
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" style="width:${val}%"></div>
+          <span class="progress-bar-text">${val}%</span>
+        </div>
+        <p style="color:var(--text-3);margin-top:8px;font-size:13px">${stageLabel}${p.detail ? " · " + p.detail : ""}</p>
       </div>
     `;
   }
@@ -78,6 +168,7 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
       <div class="stat-card"><div class="stat-label">年化波动率</div><div class="stat-value">${fmtPct(m.annualVolatility)}</div></div>
       <div class="stat-card"><div class="stat-label">平均持仓天数</div><div class="stat-value">${fmtNum(m.avgHoldDays, 1)}</div></div>
       <div class="stat-card"><div class="stat-label">胜率</div><div class="stat-value">${fmtPct(m.winRate)}</div></div>
+      <div class="stat-card"><div class="stat-label">胜率(含浮盈)</div><div class="stat-value">${fmtPct(m.winRateInclOpen)}<span style="font-size:10px;color:var(--text-3)"> 未平仓计入</span></div></div>
       <div class="stat-card"><div class="stat-label">盈亏比</div><div class="stat-value">${fmtNum(m.profitLossRatio)}</div></div>
       <div class="stat-card"><div class="stat-label">交易次数</div><div class="stat-value">${m.totalTrades || 0}</div></div>
       <div class="stat-card"><div class="stat-label">被跳过信号</div><div class="stat-value">${m.skippedSignals || 0}<span style="font-size:11px;color:var(--text-3)"> 涨跌停/T+1</span></div></div>
@@ -92,18 +183,98 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
     if (klineBars.length > 1) {
       klineHtml = `<div id="btKlineChart" style="width:100%"></div>`;
     }
+    const sideBadge = (t) => {
+      const map = { buy: ["buy", "买入"], sell: ["sell", "卖出"], restore: ["restore", "还原"] };
+      const cfg = map[t.side] || ["", t.side || ""];
+      return `<span class="badge badge-${cfg[0]}">${cfg[1]}</span>`;
+    };
     const tradeRows = trades.slice(0, 50).map(t => `
-      <tr><td>${esc(t.date)}</td><td><span class="badge badge-${t.side === "buy" ? "buy" : "sell"}">${t.side === "buy" ? "买入" : "卖出"}</span></td><td>${esc(t.symbol)}</td><td class="num">${fmtNum(t.price)}</td><td class="num">${t.quantity}</td><td class="num">${fmtNum(t.amount, 0)}</td><td class="${cls(t.pnl)} num">${t.pnl ? fmtNum(t.pnl) : "-"}</td></tr>
+      <tr><td>${esc(t.date)}</td><td>${sideBadge(t)}${t.lotTag ? `<span style="font-size:10px;color:var(--text-3);margin-left:4px">${t.lotTag === "core" ? "底仓" : "T仓"}</span>` : ""}</td><td>${esc(t.symbol)}</td><td class="num">${t.price != null ? fmtNum(t.price) : "-"}</td><td class="num">${t.quantity}</td><td class="num">${fmtNum(t.amount, 0)}</td><td class="${cls(t.pnl)} num">${t.pnl != null ? fmtNum(t.pnl) : "-"}</td></tr>
     `).join("");
+    // D2.4：组合回测分标的贡献
+    const perSym = result.perSymbol;
+    let perSymHtml = "";
+    if (perSym && Object.keys(perSym).length) {
+      const rows = Object.entries(perSym).map(([sym, ps]) => `
+        <tr><td>${esc(sym)}</td><td class="num">${fmtPct(ps.return)}</td><td class="num">${fmtNum(ps.realizedPnl)}</td><td class="num">${fmtNum(ps.openPnl)}</td><td class="num">${ps.trades}</td></tr>`).join("");
+      perSymHtml = `<div class="card"><div class="card-title">分标的贡献</div><table class="data-table"><thead><tr><th>标的</th><th class="num">区间涨幅</th><th class="num">已实现盈亏</th><th class="num">浮动盈亏</th><th class="num">交易数</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+    // 日内做T分账卡片（period=分钟 且 metrics.intraday 存在时展示）
+    const intra = m.intraday;
+    let intradayHtml = "";
+    if (intra) {
+      const tRet = intra.tPnl != null ? intra.tPnl : 0;
+      const cRet = intra.corePnl != null ? intra.corePnl : 0;
+      intradayHtml = `
+      <div class="card"><div class="card-title">做T分账 <span style="font-size:12px;font-weight:normal;color:var(--text-3);margin-left:8px">底仓 ${intra.coreShares || 0} 股 · ${intra.tradingDays || 0} 个交易日</span></div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-label">做T收益</div><div class="stat-value ${cls(tRet)}">${fmtNum(tRet)}</div></div>
+          <div class="stat-card"><div class="stat-label">底仓收益</div><div class="stat-value ${cls(cRet)}">${fmtNum(cRet)}</div></div>
+          <div class="stat-card"><div class="stat-label">做T次数</div><div class="stat-value">${intra.tRounds || 0}</div></div>
+          <div class="stat-card"><div class="stat-label">日均做T</div><div class="stat-value">${fmtNum(intra.tPerDay, 2)}</div></div>
+          <div class="stat-card"><div class="stat-label">单次平均盈亏</div><div class="stat-value ${cls(intra.avgTRoundPnl)}">${fmtNum(intra.avgTRoundPnl)}</div></div>
+          <div class="stat-card"><div class="stat-label">底仓成本</div><div class="stat-value">${fmtNum(intra.coreCost)}</div></div>
+          ${intra.pendingRestoreShares > 0 ? `<div class="stat-card"><div class="stat-label">未还原底仓</div><div class="stat-value down">${intra.pendingRestoreShares} 股</div></div>` : ""}
+        </div>
+      </div>`;
+    }
+    const risk = result.risk || {};
+    const riskActive = [];
+    if (risk.stopLoss) riskActive.push("止损 " + Math.round(risk.stopLoss * 100) + "%");
+    if (risk.takeProfit) riskActive.push("止盈 " + Math.round(risk.takeProfit * 100) + "%");
+    if (risk.maxHoldDays) riskActive.push("时间止损 " + risk.maxHoldDays + "日");
+    if (risk.maxConsecLosses) riskActive.push("熔断 " + risk.maxConsecLosses + "连亏/" + (risk.cooldownDays || 5) + "日");
+    if (risk.maxPositionPct && risk.maxPositionPct < 1) riskActive.push("仓位≤" + Math.round(risk.maxPositionPct * 100) + "%");
+    if (risk.strengthScaling) riskActive.push("强度缩放");
+    const reg = result.regime;
+    let regLabel = "";
+    if (reg && reg.enabled) {
+      regLabel = "市场状态过滤 " + esc(reg.index || "") + "·MA" + (reg.fast || 20) + (reg.ownMa ? "+个股MA" : "") + "（放行 " + (reg.allowedDays || 0) + "日 / 阻断 " + (reg.blockedDays || 0) + "日）" + (reg.warning ? " ⚠指数不可用已降级" : "");
+    }
     return `
-      <div class="card"><div class="card-title">${result.name || ""}（${result.symbol || ""}）</div>
-        ${result.dataSource === "mock" ? '<div class="status error" style="margin:0 0 12px">⚠ 未能获取真实行情，本次回测使用模拟数据，结果仅供参考</div>' : ""}
+      <div class="card"><div class="card-title">${result.name || ""}（${result.symbol || ""}）${fillLabel ? `<span style="font-size:12px;font-weight:normal;color:var(--text-3);margin-left:8px">撮合口径：${esc(fillLabel)}</span>` : ""}${riskActive.length ? `<span style="font-size:12px;font-weight:normal;color:var(--text-3);margin-left:8px">风控：${esc(riskActive.join("、"))}</span>` : ""}${regLabel ? `<div style="font-size:12px;color:var(--text-3);margin-top:6px">${regLabel}</div>` : ""}</div>
+        ${result.dataSource === "mock" ? '<div class="status error" style="margin:0 0 12px">⚠ 未能获取真实行情，本次回测使用模拟数据（已显式允许），结果仅供参考</div>' : ""}
         ${result.inSampleWarning ? `<div class="status error" style="margin:0 0 12px">⚠ ${esc(result.inSampleWarning)}</div>` : ""}
+        ${m.annualReturnNote ? `<div class="status" style="margin:0 0 12px">⚠ ${esc(m.annualReturnNote)}</div>` : ""}
         <div class="stats-grid">${statsHtml}</div></div>
       <div class="card"><div class="card-title">净值曲线</div>${curveHtml}</div>
       <div class="kline-card" style="margin:0 0 16px 0">${klineHtml}</div>
+      ${intradayHtml}
       <div class="card"><div class="card-title">交易记录 (前 50 笔)</div>${trades.length ? `<table class="data-table"><thead><tr><th>日期</th><th>方向</th><th>标的</th><th class="num">价格</th><th class="num">数量</th><th class="num">金额</th><th class="num">盈亏</th></tr></thead><tbody>${tradeRows}</tbody></table>` : `<div class="empty-state"><div class="empty-state-text">无交易记录</div></div>`}</div>
+      ${perSymHtml}
+      ${renderRobustness(result)}
     `;
+  }
+
+  function renderRobustness(result) {
+    const rb = result.robustness;
+    if (!rb) return "";
+    const v = rb.verdict || {};
+    const gradeMap = { green: ["稳健", "#22c55e"], yellow: ["一般", "#eab308"], red: ["脆弱", "#ef4444"] };
+    const g = gradeMap[v.overall] || ["-", "var(--text-3)"];
+    let html = `<div class="card"><div class="card-title">稳健性分析 <span class="badge" style="background:${g[1]}22;color:${g[1]};border:1px solid ${g[1]}66">${g[0]}</span></div>`;
+    html += `<p style="color:var(--text-3);font-size:12px;margin:0 0 12px">${esc(v.summary || "")}</p>`;
+    if (rb.cost && rb.cost.length) {
+      html += `<div style="font-size:12px;color:var(--text-3);margin:8px 0 4px">成本敏感性（佣金/印花税/过户费缩放）</div><table class="data-table"><thead><tr><th>成本档</th><th class="num">总收益</th><th class="num">年化</th><th class="num">最大回撤</th><th class="num">交易数</th><th class="num">胜率</th></tr></thead><tbody>`;
+      for (const c of rb.cost) html += `<tr><td>${esc(c.scale)}</td><td class="num">${fmtPct(c.totalReturn)}</td><td class="num">${fmtPct(c.annualReturn)}</td><td class="num">${fmtPct(c.maxDrawdown)}</td><td class="num">${c.totalTrades}</td><td class="num">${fmtPct(c.winRate)}</td></tr>`;
+      html += `</tbody></table>`;
+    }
+    if (rb.params && rb.params.length) {
+      html += `<div style="font-size:12px;color:var(--text-3);margin:8px 0 4px">参数敏感性（±20% 邻域，总收益%）</div><table class="data-table"><thead><tr><th>参数</th><th class="num">基准值</th><th class="num">×0.8</th><th class="num">×1.0</th><th class="num">×1.2</th></tr></thead><tbody>`;
+      for (const p of rb.params) {
+        const cells = { "x0.8": "-", "x1.0": "-", "x1.2": "-" };
+        for (const x of p.runs) cells[x.factor] = fmtPct(x.totalReturn);
+        html += `<tr><td>${esc(p.param)}</td><td class="num">${p.base}</td><td class="num">${cells["x0.8"]}</td><td class="num">${cells["x1.0"]}</td><td class="num">${cells["x1.2"]}</td></tr>`;
+      }
+      html += `</tbody></table>`;
+    }
+    if (rb.slices && rb.slices.length) {
+      html += `<div style="font-size:12px;color:var(--text-3);margin:8px 0 4px">时间切片</div><table class="data-table"><thead><tr><th>时间段</th><th class="num">总收益</th><th class="num">交易数</th></tr></thead><tbody>`;
+      for (const s of rb.slices) html += `<tr><td>${esc(s.slice)}</td><td class="num">${fmtPct(s.totalReturn)}</td><td class="num">${s.totalTrades}</td></tr>`;
+      html += `</tbody></table>`;
+    }
+    html += `</div>`;
+    return html;
   }
 
   function renderEquityCurve(equity, trades) {
@@ -124,6 +295,7 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
     equity.forEach(function (e, i) { eqMap[e.date] = i; });
     if (trades && trades.length) {
       trades.forEach(function (t) {
+        if (t.side !== "buy" && t.side !== "sell") return; // restore 等非交易事件不画点
         var idx = eqMap[t.date];
         var v = idx != null ? values[idx] : null;
         if (v == null) return;
@@ -254,7 +426,7 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
         return ["1d", "1w", "1mon"].indexOf(p.value) >= 0;
       }),
       period: period,
-      dividendType: (vm && vm.state && vm.state.dividendType) || "front",
+      dividendType: (vm && vm.state && vm.state.dividendType) || "front_ratio",
       dataZoomStart: dzStart,
       dataZoomEnd: 100,
       onSettingsChange: function (settings) {
@@ -278,6 +450,54 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
     }
   }
 
+  function renderHistory(state, vm) {
+    const hist = state.history || [];
+    const rows = hist.slice(0, 20).map(h => `
+      <tr style="cursor:pointer" data-bid="${esc(h.backtestId)}">
+        <td><input type="checkbox" data-bid="${esc(h.backtestId)}" ${state.compareSel[h.backtestId] ? "checked" : ""} /></td>
+        <td>${esc((h.createdAt || "").slice(5, 16))}</td>
+        <td>${esc(h.strategy || "")}${h.portfolio ? ' <span class="badge badge-buy">组合</span>' : ""}</td>
+        <td>${esc(h.symbol || "")}</td>
+        <td class="num">${fmtPct(h.metrics && h.metrics.totalReturn)}</td>
+        <td class="num">${fmtPct(h.metrics && h.metrics.maxDrawdown)}</td>
+        <td class="num">${(h.metrics && h.metrics.totalTrades) || 0}</td>
+      </tr>`).join("");
+    // 对比表
+    let cmpHtml = "";
+    const cmp = state.comparison;
+    if (cmp && cmp.length) {
+      const rows_ = [
+        ["策略", c => esc(c.strategy || "")],
+        ["标的", c => esc(c.symbol || "")],
+        ["区间", c => esc((c.startDate || "") + " ~ " + (c.endDate || ""))],
+        ["撮合口径", c => esc(c.fillModel || "")],
+        ["总收益", c => fmtPct(c.metrics.totalReturn)],
+        ["区间涨幅", c => fmtPct(c.metrics.benchmarkReturn)],
+        ["超额收益", c => fmtPct(c.metrics.excessReturn)],
+        ["年化收益", c => fmtPct(c.metrics.annualReturn)],
+        ["最大回撤", c => fmtPct(c.metrics.maxDrawdown)],
+        ["夏普", c => fmtNum(c.metrics.sharpeRatio)],
+        ["胜率", c => fmtPct(c.metrics.winRate)],
+        ["交易数", c => (c.metrics.totalTrades || 0)],
+        ["最终资金", c => fmtNum(c.metrics.finalCapital, 0)],
+      ];
+      cmpHtml = `<div style="overflow:auto;margin-top:12px"><table class="data-table"><thead><tr><th>指标</th>${cmp.map(c => `<th>${esc((c.createdAt || "").slice(5, 16))} · ${esc(c.strategy || "")}</th>`).join("")}</tr></thead><tbody>${
+        rows_.map(([label, get]) => `<tr><td>${label}</td>${cmp.map(c => `<td class="num">${get(c)}</td>`).join("")}</tr>`).join("")
+      }</tbody></table></div>`;
+    }
+    const selCount = Object.keys(state.compareSel).length;
+    return `
+      <details id="bt_history" style="margin-top:16px">
+        <summary style="cursor:pointer;color:var(--text-3);font-size:13px">历史回测（${hist.length} 次）· 勾选 2 个以上可 A/B 对比</summary>
+        <div style="margin:10px 0">
+          <button class="btn btn-ghost" id="bt_compare" ${selCount < 2 ? "disabled" : ""}>对比所选（${selCount}）</button>
+        </div>
+        ${hist.length ? `<div style="max-height:260px;overflow:auto"><table class="data-table"><thead><tr><th></th><th>时间</th><th>策略</th><th>标的</th><th class="num">总收益</th><th class="num">最大回撤</th><th class="num">交易数</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty-state"><div class="empty-state-text">暂无历史回测</div></div>`}
+        ${cmpHtml}
+      </details>
+    `;
+  }
+
   function render(root, vm) {
     var btSearchCtrl = null;
     function paint(state) {
@@ -287,7 +507,7 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
       if (_klineChart) { try { _klineChart.destroy(); } catch (e) {} _klineChart = null; }
       if (_equityChart) { try { _equityChart.dispose(); } catch (e) {} _equityChart = null; }
 
-      root.innerHTML = renderConfig(state, vm) + renderResult(state.result);
+      root.innerHTML = renderConfig(state, vm) + renderResult(state.result) + renderHistory(state, vm);
 
       // Bind strategy select
       const stratEl = document.getElementById("bt_strategy");
@@ -305,11 +525,42 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
         }, { multi: true });
       }
       // Bind number inputs
-      const numIds = { bt_capital: "initialCapital", bt_commission: "commission", bt_slippage: "slippage" };
+      const numIds = { bt_capital: "initialCapital", bt_commission: "commission", bt_slippage: "slippage", bt_basePositionShares: "basePositionShares" };
       for (const [elId, field] of Object.entries(numIds)) {
         const el = document.getElementById(elId);
         if (el) el.addEventListener("change", () => vm.setField(field, el.value));
       }
+      // K线周期：切换后重渲染（显示/隐藏日内配置区）
+      const periodEl = document.getElementById("bt_period");
+      if (periodEl) periodEl.addEventListener("change", () => { vm.setField("period", periodEl.value); paint(vm.state); });
+      // 尾盘强平开关
+      const eodEl = document.getElementById("bt_forceEodClose");
+      if (eodEl) eodEl.addEventListener("change", () => vm.setField("forceEodClose", eodEl.checked));
+      // D0.1/D0.3：撮合口径 & 允许模拟数据
+      const fillEl = document.getElementById("bt_fillModel");
+      if (fillEl) fillEl.addEventListener("change", () => vm.setField("fillModel", fillEl.value));
+      const mockEl = document.getElementById("bt_allowMock");
+      if (mockEl) mockEl.addEventListener("change", () => vm.setField("allowMock", mockEl.checked));
+      // D4.2：稳健性分析
+      const robEl = document.getElementById("bt_robustness");
+      if (robEl) robEl.addEventListener("change", () => vm.setField("robustness", robEl.checked));
+      // D2：风控与仓位
+      const riskIds = { bt_stopLoss: "stopLoss", bt_takeProfit: "takeProfit", bt_maxHoldDays: "maxHoldDays", bt_maxConsecLosses: "maxConsecLosses", bt_cooldownDays: "cooldownDays", bt_maxPositionPct: "maxPositionPct" };
+      for (const [elId, field] of Object.entries(riskIds)) {
+        const el = document.getElementById(elId);
+        if (el) el.addEventListener("change", () => vm.setField(field, el.value));
+      }
+      const ssEl = document.getElementById("bt_strengthScaling");
+      if (ssEl) ssEl.addEventListener("change", () => vm.setField("strengthScaling", ssEl.checked));
+      // D2.3：市场状态过滤
+      const regEl = document.getElementById("bt_regimeEnabled");
+      if (regEl) regEl.addEventListener("change", () => vm.setField("regimeEnabled", regEl.checked));
+      const regIdxEl = document.getElementById("bt_regimeIndex");
+      if (regIdxEl) regIdxEl.addEventListener("change", () => vm.setField("regimeIndex", regIdxEl.value));
+      const regFastEl = document.getElementById("bt_regimeFast");
+      if (regFastEl) regFastEl.addEventListener("change", () => vm.setField("regimeFast", regFastEl.value));
+      const regOwnEl = document.getElementById("bt_regimeOwnMa");
+      if (regOwnEl) regOwnEl.addEventListener("change", () => vm.setField("regimeOwnMa", regOwnEl.checked));
       // Init flatpickr on date inputs
       const startEl = document.getElementById("bt_start");
       const endEl = document.getElementById("bt_end");
@@ -341,10 +592,19 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
       // Run button
       const runBtn = document.getElementById("bt_run");
       if (runBtn) runBtn.addEventListener("click", () => vm.run());
+      // D4.3 历史回测：勾选 + 对比
+      document.querySelectorAll("#bt_history input[type=checkbox]").forEach(el => {
+        el.addEventListener("change", () => vm.toggleCompare(el.getAttribute("data-bid")));
+      });
+      const cmpBtn = document.getElementById("bt_compare");
+      if (cmpBtn) cmpBtn.addEventListener("click", () => vm.runCompare());
       // Render equity curve chart after DOM is ready
       renderEquityCurve(state.result ? state.result.equityCurve : null, state.result ? state.result.trades : null);
       renderKlineChart(state.result ? state.result.bars : null, state.result ? state.result.trades : null, vm);
     }
+    // 订阅回测进度（离开页面时由 Router onLeave 清理）
+    vm.subscribeProgress();
+    vm.loadHistory();
     vm.subscribe(paint);
   }
   export { render };

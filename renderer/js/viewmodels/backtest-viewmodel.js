@@ -19,8 +19,33 @@ class BacktestViewModel {
       initialCapital: saved.initialCapital || 1000000,
       commission: saved.commission !== undefined ? saved.commission : 0.0003,
       slippage: saved.slippage !== undefined ? saved.slippage : 0.001,
-      dividendType: saved.dividendType || "front",
-    period: saved.period || "1d",
+      dividendType: saved.dividendType || "front_ratio",
+      period: saved.period || "1d",
+      // 日内做T（分钟周期专用，默认关闭/0）
+      basePositionShares: saved.basePositionShares !== undefined ? saved.basePositionShares : 0,
+      forceEodClose: saved.forceEodClose !== undefined ? saved.forceEodClose : true,
+      // D0.1/D0.3：撮合口径（默认 next_open 保守）与是否允许模拟数据
+      fillModel: saved.fillModel || "next_open",
+      allowMock: !!saved.allowMock,
+      // D2 风控与仓位（默认全部关闭/全仓，保持兼容）
+      stopLoss: saved.stopLoss !== undefined ? saved.stopLoss : 0,
+      takeProfit: saved.takeProfit !== undefined ? saved.takeProfit : 0,
+      maxHoldDays: saved.maxHoldDays !== undefined ? saved.maxHoldDays : 0,
+      maxConsecLosses: saved.maxConsecLosses !== undefined ? saved.maxConsecLosses : 0,
+      cooldownDays: saved.cooldownDays !== undefined ? saved.cooldownDays : 5,
+      maxPositionPct: saved.maxPositionPct !== undefined ? saved.maxPositionPct : 1.0,
+      strengthScaling: !!saved.strengthScaling,
+      // D2.3 市场状态过滤（regime，默认关闭）
+      regimeEnabled: !!saved.regimeEnabled,
+      regimeIndex: saved.regimeIndex || "000300.SH",
+      regimeFast: saved.regimeFast !== undefined ? saved.regimeFast : 20,
+      regimeOwnMa: !!saved.regimeOwnMa,
+      // D4.2 稳健性分析（默认关闭）
+      robustness: !!saved.robustness,
+      // D4.3 回测历史（列表 + A/B 对比）
+      history: [],
+      compareSel: {},
+      comparison: null,
       running: false,
       result: null,
       error: null,
@@ -46,7 +71,23 @@ class BacktestViewModel {
         commission: s.commission,
         slippage: s.slippage,
         dividendType: s.dividendType,
-    period: s.period,
+        period: s.period,
+        basePositionShares: s.basePositionShares,
+        forceEodClose: s.forceEodClose,
+        fillModel: s.fillModel,
+        allowMock: s.allowMock,
+        stopLoss: s.stopLoss,
+        takeProfit: s.takeProfit,
+        maxHoldDays: s.maxHoldDays,
+        maxConsecLosses: s.maxConsecLosses,
+        cooldownDays: s.cooldownDays,
+        maxPositionPct: s.maxPositionPct,
+        strengthScaling: s.strengthScaling,
+        regimeEnabled: s.regimeEnabled,
+        regimeIndex: s.regimeIndex,
+        regimeFast: s.regimeFast,
+        regimeOwnMa: s.regimeOwnMa,
+        robustness: s.robustness,
       }));
     } catch (e) {}
   }
@@ -94,6 +135,40 @@ class BacktestViewModel {
     }
   }
 
+  // D4.3 回测历史管理
+  async loadHistory() {
+    try {
+      const resp = await this.facade.backtest.list();
+      if (resp.ok && Array.isArray(resp.data)) {
+        this._set({ history: resp.data });
+      }
+    } catch (e) {
+      // 静默
+    }
+  }
+
+  toggleCompare(id) {
+    const sel = Object.assign({}, this.state.compareSel);
+    if (sel[id]) delete sel[id];
+    else sel[id] = true;
+    this._set({ compareSel: sel, comparison: null });
+  }
+
+  async runCompare() {
+    const ids = Object.keys(this.state.compareSel);
+    if (ids.length < 2) {
+      this._set({ error: "请至少选择 2 个历史回测进行对比" });
+      return;
+    }
+    try {
+      const resp = await this.facade.backtest.compare(ids);
+      if (!resp.ok) { this._set({ error: this._humanizeError(resp.error) }); return; }
+      this._set({ comparison: resp.data || [], error: null });
+    } catch (e) {
+      this._set({ error: this._humanizeError(e.message) });
+    }
+  }
+
   setField(key, value) {
     this.state[key] = value;
     this._saveConfig();
@@ -136,8 +211,27 @@ class BacktestViewModel {
         initialCapital: Number(s.initialCapital),
         commission: Number(s.commission),
         slippage: Number(s.slippage),
-        dividendType: s.dividendType || "front",
+        dividendType: s.dividendType || "front_ratio",
         period: s.period || "1d",
+        basePositionShares: Number(s.basePositionShares) || 0,
+        forceEodClose: s.forceEodClose !== false,
+        fillModel: s.fillModel || "next_open",
+        allowMock: !!s.allowMock,
+        // D2 风控与仓位
+        stopLoss: Number(s.stopLoss) || 0,
+        takeProfit: Number(s.takeProfit) || 0,
+        maxHoldDays: Number(s.maxHoldDays) || 0,
+        maxConsecLosses: Number(s.maxConsecLosses) || 0,
+        cooldownDays: Number(s.cooldownDays) || 5,
+        maxPositionPct: Number(s.maxPositionPct) || 1.0,
+        strengthScaling: !!s.strengthScaling,
+        // D2.3 市场状态过滤
+        regimeEnabled: !!s.regimeEnabled,
+        regimeIndex: (s.regimeIndex || "000300.SH").trim(),
+        regimeFast: Number(s.regimeFast) || 20,
+        regimeOwnMa: !!s.regimeOwnMa,
+        // D4.2 稳健性分析
+        robustness: !!s.robustness,
       });
       if (!resp.ok) { this._set({ running: false, error: this._humanizeError(resp.error) }); return; }
       this._set({ running: false, result: resp.data });

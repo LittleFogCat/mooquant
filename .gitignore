@@ -27,6 +27,7 @@ npm-debug.log*
 _*.js
 _*.py
 !bridge/_shared.py
+!bridge/_test_intraday.py
 _*.out
 *.tmp
 .cache/
@@ -51,7 +52,7 @@ data/strategies/
 # Model artifacts (binary weights)
 data/models/
 
-# UI µ÷ÊÔÁÙÊ±²úÎï£¨ÀëÆÁ½ØÍ¼½Å±¾/Ô¤ÀÀÒ³/½ØÍ¼Êä³ö£©
+# UI ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï£¨ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¼ï¿½Å±ï¿½/Ô¤ï¿½ï¿½Ò³/ï¿½ï¿½Í¼ï¿½ï¿½ï¿½ï¿½ï¿½
 preview.html
 preview_tooltip.png
 preview_shot.png
@@ -63,5 +64,5 @@ _p.js
 _screencap.js
 _tmp_screenshot.js
 
-# Õï¶Ï°üµ¼³ö£¨ÔËĞĞÊ±²úÎï£©
+# ï¿½ï¿½Ï°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï£©
 data/diagnostics/

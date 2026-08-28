@@ -95,6 +95,9 @@
 .form-input:focus,.form-select:focus{border-color:var(--text-2);box-shadow:0 0 0 3px var(--accent-dim)}
 .form-input::placeholder{color:var(--text-3)}
 .form-select{cursor:pointer}
+/* 数字输入框隐藏上下按钮（所有表单统一不显示步进箭头） */
+input[type=number]{-moz-appearance:textfield;-webkit-appearance:none;appearance:none}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 /* 表单字段说明：圆形问号角标 + 悬浮提示（悬浮/聚焦时鼠标指针保持原状不变形） */
 .form-hint{display:inline-flex;align-items:center;justify-content:center;width:12px;height:12px;margin-left:4px;border:1px solid var(--text-3);border-radius:50%;color:var(--text-3);font-size:8px;line-height:1;vertical-align:super;position:relative;transition:var(--transition)}
 .form-hint:hover,.form-hint:focus{color:var(--text-1);border-color:var(--text-2);outline:none}
@@ -166,6 +169,7 @@
 .badge-archived{color:var(--text-3);background:var(--bg-3)}
 .badge-buy{color:var(--red);background:rgba(239,68,68,.1)}
 .badge-sell{color:var(--green);background:rgba(34,197,94,.1)}
+.badge-restore{color:var(--blue);background:rgba(59,130,246,.1)}
 .badge-filled{color:var(--green);background:rgba(34,197,94,.1)}
 .badge-cancelled{color:var(--text-3);background:var(--bg-2)}
 .badge-pending{color:var(--orange);background:rgba(245,158,11,.1)}

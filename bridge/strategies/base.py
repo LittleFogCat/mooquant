@@ -31,12 +31,20 @@ class Signal:
         target_position: 目标仓位比例 [0,1]，None 表示不调仓。
             对应 QMT order_target_percent。设置后由执行层据此调仓。
         indicators: 当前指标快照，用于日志/展示
+        qty: 期望下单股数（None=按执行层默认仓位逻辑）。日内做T策略
+            常用固定股数往返（买1000卖1000），显式指定比比例语义更直接。
+        lot_tag: 仓位标签 "core"（底仓）| "t"（T仓）| None（不指定）。
+            做T策略用它表达意图：先卖后买时 sell+lot_tag="core" 表示
+            卖底仓、随后 buy+lot_tag="t" 表示用T资金买回还原底仓。
+            执行层（撮合/实盘）据此分账，普通策略无需关心。
     """
     action: str
     reason: str = ""
     strength: float = 1.0
     target_position: Optional[float] = None
     indicators: Dict[str, Any] = field(default_factory=dict)
+    qty: Optional[int] = None
+    lot_tag: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -45,6 +53,8 @@ class Signal:
             "strength": self.strength,
             "targetPosition": self.target_position,
             "indicators": self.indicators,
+            "qty": self.qty,
+            "lotTag": self.lot_tag,
         }
 
 
@@ -67,6 +77,62 @@ class PortfolioSignal:
 
 
 # ----------------------------------------------------------------------
+# 多周期无前视切片（日内/多周期策略正确性核心，回测与实盘共用）
+# ----------------------------------------------------------------------
+def _hm_to_min(hm: str) -> int:
+    """"HH:MM" -> 当日分钟数（用于分钟周期完成度比较，跨午休安全）。"""
+    try:
+        return int(hm[:2]) * 60 + int(hm[3:5])
+    except (ValueError, IndexError):
+        return 0
+
+
+def slice_upto(bars_by_period, now_dt: str):
+    """按当前 1m bar 时间戳切片多周期数据，严格无前视。
+
+    Args:
+        bars_by_period: {period: 全量bars}（各周期均为升序、date 已归一格式）
+        now_dt: 当前时刻 "YYYY-MM-DD HH:MM"（当前 1m bar 的 date）
+
+    Returns:
+        {period: bars} 新字典，各周期只含「此刻已完整走完」的 bar：
+          - 基周期（1m）：date <= now 的全部 bar（当前bar收盘已知时点）
+          - 更大分钟周期（5m/15m/...）：bar 时间 + 周期分钟数 <= now 才视为
+            已完成（对起始/结束两种标注口径都保守安全，无前视）
+          - 日线：date < 今天（今日进行中的日线 bar 不暴露，策略判断
+            趋势只能用昨日及以前--真实世界同样如此）
+        输入中不存在的周期原样缺失；bar 引用不复制（调用方不可修改）。
+    """
+    now_day = now_dt[:10]
+    now_hm = now_dt[11:16] if len(now_dt) > 10 else "09:30"
+    now_min = _hm_to_min(now_hm)
+    out = {}
+    for period, bars in (bars_by_period or {}).items():
+        if not bars:
+            out[period] = list(bars)
+            continue
+        if period.endswith("m"):
+            n_str = period[:-1]
+            n = int(n_str) if n_str.isdigit() else 1
+            if n <= 1:
+                out[period] = [b for b in bars if str(b.get("date", "")) <= now_dt]
+            else:
+                kept = []
+                for b in bars:
+                    d = str(b.get("date", ""))
+                    if len(d) <= 10:
+                        continue  # 分钟周期里混入无时间bar（异常数据），丢弃
+                    day, hm = d[:10], d[11:16]
+                    if day < now_day or (day == now_day and _hm_to_min(hm) + n <= now_min):
+                        kept.append(b)
+                out[period] = kept
+        else:
+            # 日线/周线/月线：今日进行中 bar 不暴露
+            out[period] = [b for b in bars if str(b.get("date", ""))[:10] < now_day]
+    return out
+
+
+# ----------------------------------------------------------------------
 # 上下文对象
 # ----------------------------------------------------------------------
 class Context:
@@ -80,6 +146,9 @@ class Context:
 
     def __init__(self):
         self.bars: List[dict] = []          # 当前标的历史K线（到当前bar为止）
+        # 多周期K线（日内/多周期策略用）：{period: bars}，如 {"1d": [...], "5m": [...], "1m": [...]}
+        # 由驱动方（日内回测引擎/实盘执行器）填充，均经过无前视切片（slice_upto）
+        self.bars_by_period: Dict[str, List[dict]] = {}
         self.position: Optional[object] = None    # 当前持仓对象（平台特定）
         self.account: Optional[object] = None     # 资金对象（平台特定）
         self.indicators: Optional[ModuleType] = None  # 指标库引用
@@ -87,8 +156,12 @@ class Context:
         self.barpos: int = 0                # 当前bar索引（对应 QMT barpos）
         self.symbol: str = ""               # 当前标的
         self.period: str = "1d"             # 当前周期（对应 QMT period）
+        self.trading_day: str = ""           # 当前交易日 "YYYY-MM-DD"（分钟驱动时有效）
+        self.intraday_pos: int = 0          # 当日第几根分钟bar（0起；日内策略可判断临近收盘）
+        self.intraday_total: int = 0        # 当日分钟bar总数（停牌/数据缺失时为实际数量）
         self._platform: str = "mookquant"   # 运行平台标识
         self._features: set = set()         # 平台支持的能力集合
+        self._vwap_cache: Dict[str, Any] = {}  # 分时均线缓存（按交易日重置）
 
     @property
     def platform(self) -> str:
@@ -102,6 +175,43 @@ class Context:
         策略应先探测再使用，避免在不支持的平台崩溃。
         """
         return name in self._features
+
+    # -- 分时均线（日内做T核心指标，QMT 分时图黄线口径）--
+    def intraday_vwap(self, symbol: str = "") -> Optional[float]:
+        """当日分时均线（累计成交额 / 累计成交量）。
+
+        数据含 amount 时为标准 vwap；无 amount 时退化为「累计均价 × 成交量」
+        近似（用每根 bar 的 (o+h+l+c)/4 代替成交均价）。返回 None 表示
+        当日尚无数据（策略应跳过判断）。
+
+        只用当日 1m bars（ctx.bars_by_period["1m"] 中 date[:10] == trading_day），
+        天然无前视（切片已保证）。
+        """
+        bars_1m = self.bars_by_period.get("1m") or []
+        if not bars_1m or not self.trading_day:
+            return None
+        # 缓存：当日增量累计，避免每根 bar 全量重算 O(n^2)
+        day = self.trading_day
+        cache = self._vwap_cache.get(day)
+        if cache is None:
+            cache = {"cum_amount": 0.0, "cum_volume": 0.0, "last_idx": -1}
+            self._vwap_cache[day] = cache
+        # 增量累加新增 bars（bars_by_period 每根 bar 追加一个元素）
+        for i in range(cache["last_idx"] + 1, len(bars_1m)):
+            b = bars_1m[i]
+            if str(b.get("date", ""))[:10] != day:
+                cache["last_idx"] = i  # 跳过非当日 bar（理论不会出现，防御）
+                continue
+            amt = b.get("amount")
+            if not amt or amt <= 0:
+                amt = (b.get("open", 0) + b.get("high", 0) +
+                       b.get("low", 0) + b.get("close", 0)) / 4.0 * b.get("volume", 0)
+            cache["cum_amount"] += amt
+            cache["cum_volume"] += b.get("volume", 0) or 0
+            cache["last_idx"] = i
+        if cache["cum_volume"] <= 0:
+            return None
+        return cache["cum_amount"] / cache["cum_volume"]
 
     # -- 取数接口（由具体实现覆盖）--
     def get_bars(self, symbol: str, count: int, period: str = "1d") -> List[dict]:

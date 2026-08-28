@@ -20,19 +20,36 @@
 
 ```
 bridge/strategies/
-├── base.py            策略基类 StrategyBase + Signal + PortfolioSignal + Context
+├── base.py            策略基类 StrategyBase + Signal + PortfolioSignal + Context + slice_upto
 ├── indicators.py      技术指标库（MA/EMA/MACD/RSI/KDJ/BOLL）
 ├── registry.py        自动扫描注册（builtin/ + data/strategies/user/）
-├── builtin/           内置策略（ma_cross/momentum/mean_reversion）
+├── builtin/           内置策略（ma_cross/momentum/mean_reversion/equal_weight/intraday_t）
 └── exporters/         平台导出器（qmt_exporter.py 适配壳包装）
 ```
 
 ### 核心接口
 
 - `StrategyBase`：策略基类，子类实现 `on_bar(bar, ctx)`。生命周期 `on_init/on_after_init/on_bar/on_tick/on_stop` 对应 QMT init/after_init/handlebar/subscribe/stop。
-- `Signal`：单标的信号 `{action, reason, strength, target_position, indicators}`，`target_position` 对应 QMT `order_target_percent`。
+- `Signal`：单标的信号 `{action, reason, strength, target_position, indicators, qty, lot_tag}`，`target_position` 对应 QMT `order_target_percent`；`qty`/`lot_tag` 为日内做T扩展（期望股数 / 底仓"core"·T仓"t"标签）。
 - `Context`：跨平台最大公约数接口（`get_bars/order_target_percent/get_position` 等），策略只依赖它，不碰 xtquant。
 - `registry.load_all()`：扫描 builtin/ 与 user/，自动 import 注册策略类。
+
+### 多周期与日内支持（做T场景）
+
+- `ctx.bars_by_period: {period: bars}`：多周期K线（如 `{"1d": [...], "5m": [...], "1m": [...]}`），由日内回测引擎/实盘执行器填充，均经 `slice_upto` 无前视切片。
+- `slice_upto(bars_by_period, now_dt)`：按当前 1m bar 时刻切片各周期，只暴露「已完整走完」的 bar（当日进行中日线不暴露、进行中的 5m 桶不暴露），回测与实盘共用，杜绝未来函数。
+- `ctx.intraday_vwap()`：当日分时均线（累计成交额/累计成交量，QMT 分时图黄线口径），带增量缓存；无 amount 数据时退化为 (o+h+l+c)/4 近似。
+- `ctx.trading_day / ctx.intraday_pos`：当前交易日与当日第几根分钟bar。
+- `ctx.account / ctx.position`：引擎注入的账户/持仓快照（cash/total_assets；core_shares/t_shares/sellable_*），策略据此测算仓位。
+
+### 日内做T策略（intraday_t）
+
+内置 `strategies/builtin/intraday_t.py`，trigger_mode="intraday"：
+
+- 趋势门（日线，昨日及以前，无前视）：MA20 之上只做正T（先买后卖），之下只做反T（先卖后买），带缓冲带
+- 分时触发（1m + vwap + 5m RSI）：偏离分时均线超阈值且 RSI 超卖/超买
+- T仓管理：tRatio 资金比例、maxTCount 日内次数上限、14:50 后不开新仓（撮合层 14:55 强平兜底）
+- 信号带 `qty + lot_tag`：`sell+core` 表示先卖底仓（反向T），`buy+t` 表示买回还原
 
 ### 数据流
 
