@@ -15,10 +15,17 @@ mookquant 路 SQLite 鍘嗗彶K绾跨紦瀛樻ā鍧?
 import os
 import sqlite3
 import threading
+import time
 
 # 数据库文件路径：项目根目录 / data / mooquant.db
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(_PROJECT_ROOT, "data", "mooquant.db")
+
+# 缓存数据规格版本（D0.4）：与 datafeed.DATA_SPEC_VERSION 保持一致，
+# 改动取数口径（volume 单位/复权方式/字段列表）时必须同步 +1。
+# 版本不一致或缺失版本记录的旧缓存会在查询时被忽略并清理（自愈式重新拉取），
+# 防止旧口径数据污染回测/训练。
+CACHE_SPEC_VERSION = 3
 
 # 线程锁，保证同进程内建表操作的线程安全
 _init_lock = threading.Lock()
@@ -54,13 +61,24 @@ def init_db():
                     close         REAL NOT NULL,
                     volume        REAL NOT NULL DEFAULT 0,
                     amount        REAL NOT NULL DEFAULT 0,
-                    dividend_type TEXT NOT NULL DEFAULT 'front',
+                    dividend_type TEXT NOT NULL DEFAULT 'front_ratio',
                     PRIMARY KEY (code, period, date, dividend_type)
                 )
             """)
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_kline_lookup
                 ON kline_history (code, period, dividend_type, date)
+            """)
+            # D0.4：缓存规格版本元数据（每标的每周期一条），查询时校验口径
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS kline_meta (
+                    code          TEXT NOT NULL,
+                    period        TEXT NOT NULL,
+                    dividend_type TEXT NOT NULL,
+                    spec_version  INTEGER NOT NULL DEFAULT 0,
+                    updated_at    TEXT,
+                    PRIMARY KEY (code, period, dividend_type)
+                )
             """)
             conn.commit()
             init_stocks_table()
@@ -69,7 +87,44 @@ def init_db():
             conn.close()
 
 
-def query_bars(code, period, count=-1, dividend_type="front"):
+def _get_spec_version(conn, code, period, dividend_type):
+    """读取某标的缓存的规格版本；无记录（旧缓存或从未写过）返回 None。"""
+    row = conn.execute(
+        "SELECT spec_version FROM kline_meta WHERE code=? AND period=? AND dividend_type=?",
+        (code, period, dividend_type),
+    ).fetchone()
+    return row["spec_version"] if row else None
+
+
+def _set_spec_version(conn, code, period, dividend_type, version):
+    """写入/更新某标的缓存的规格版本。"""
+    conn.execute(
+        "INSERT OR REPLACE INTO kline_meta (code, period, dividend_type, spec_version, updated_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (code, period, dividend_type, version, time.strftime('%Y-%m-%dT%H:%M:%S')),
+    )
+
+
+def _cache_stale(conn, code, period, dividend_type, spec_version):
+    """D0.4：缓存口径是否过期。过期则清理旧行返回 True（调用方忽略缓存、重新拉取）。
+
+    spec_version 为 None 时不校验（调用方不关心口径）。
+    """
+    if spec_version is None:
+        return False
+    stored = _get_spec_version(conn, code, period, dividend_type)
+    if stored == spec_version:
+        return False
+    # 版本不一致 / 无版本记录（旧口径缓存）：删除旧行，自愈式等待重新拉取
+    conn.execute(
+        "DELETE FROM kline_history WHERE code=? AND period=? AND dividend_type=?",
+        (code, period, dividend_type),
+    )
+    conn.commit()
+    return True
+
+
+def query_bars(code, period, count=-1, dividend_type="front_ratio", spec_version=CACHE_SPEC_VERSION):
     """从数据库查询K线数据（按日期升序返回）
 
     Args:
@@ -84,6 +139,8 @@ def query_bars(code, period, count=-1, dividend_type="front"):
     init_db()
     conn = _get_conn()
     try:
+        if _cache_stale(conn, code, period, dividend_type, spec_version):
+            return []
         if count > 0:
             rows = conn.execute(
                 "SELECT * FROM kline_history "
@@ -104,7 +161,7 @@ def query_bars(code, period, count=-1, dividend_type="front"):
         conn.close()
 
 
-def query_bars_by_date(code, period, start_date, end_date, dividend_type="front"):
+def query_bars_by_date(code, period, start_date, end_date, dividend_type="front_ratio", spec_version=CACHE_SPEC_VERSION):
     """按日期范围查询K线数据（升序）
 
     Args:
@@ -113,6 +170,8 @@ def query_bars_by_date(code, period, start_date, end_date, dividend_type="front"
     init_db()
     conn = _get_conn()
     try:
+        if _cache_stale(conn, code, period, dividend_type, spec_version):
+            return []
         rows = conn.execute(
             "SELECT * FROM kline_history "
             "WHERE code=? AND period=? AND dividend_type=? "
@@ -124,8 +183,8 @@ def query_bars_by_date(code, period, start_date, end_date, dividend_type="front"
         conn.close()
 
 
-def save_bars(code, period, bars, dividend_type="front"):
-    """保存K线数据到数据库（已存在的自动跳过）
+def save_bars(code, period, bars, dividend_type="front_ratio", spec_version=CACHE_SPEC_VERSION):
+    """保存K线数据到数据库（已存在的自动跳过），并记录数据规格版本
 
     Returns:
         int  实际新增的行数
@@ -153,6 +212,7 @@ def save_bars(code, period, bars, dividend_type="front"):
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             data,
         )
+        _set_spec_version(conn, code, period, dividend_type, spec_version)
         conn.commit()
 
         after = conn.execute(
@@ -165,7 +225,7 @@ def save_bars(code, period, bars, dividend_type="front"):
         conn.close()
 
 
-def get_latest_date(code, period, dividend_type="front"):
+def get_latest_date(code, period, dividend_type="front_ratio"):
     """获取数据库中某股票某周期的最新日期（YYYY-MM-DD 或 None）"""
     init_db()
     conn = _get_conn()
@@ -180,7 +240,7 @@ def get_latest_date(code, period, dividend_type="front"):
         conn.close()
 
 
-def get_count(code, period, dividend_type="front"):
+def get_count(code, period, dividend_type="front_ratio"):
     """获取数据库中某股票某周期的数据条数"""
     init_db()
     conn = _get_conn()
@@ -191,6 +251,24 @@ def get_count(code, period, dividend_type="front"):
             (code, period, dividend_type),
         ).fetchone()
         return row["cnt"] if row else 0
+    finally:
+        conn.close()
+
+
+def get_kline_coverage(dividend_type="front_ratio"):
+    """日线缓存覆盖摘要（D1.4）：{code: {count, first, last}}（period='1d'）。
+
+    供数据健康报告（datafeed.coverage_report）统计覆盖率/新旧度。
+    """
+    init_db()
+    conn = _get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT code, COUNT(*) AS cnt, MIN(date) AS first, MAX(date) AS last "
+            "FROM kline_history WHERE period='1d' AND dividend_type=? GROUP BY code",
+            (dividend_type,),
+        ).fetchall()
+        return {r["code"]: {"count": r["cnt"], "first": r["first"], "last": r["last"]} for r in rows}
     finally:
         conn.close()
 

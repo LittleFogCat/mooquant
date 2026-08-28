@@ -29,7 +29,17 @@ const facade = {
     addType: (payload) => ipcRenderer.invoke("strategy:addType", payload),
     deleteType: (payload) => ipcRenderer.invoke("strategy:deleteType", payload),
   },
-  backtest: { run: (c) => ipcRenderer.invoke("backtest:run", c) },
+  backtest: {
+    run: (c) => ipcRenderer.invoke("backtest:run", c),
+    // D4.3 回测历史管理
+    list: (limit) => ipcRenderer.invoke("backtest:list", limit),
+    compare: (ids) => ipcRenderer.invoke("backtest:compare", ids),
+    onProgress: (callback) => {
+      const handler = (_e, data) => callback(data);
+      ipcRenderer.on("backtest:progress", handler);
+      return () => ipcRenderer.removeListener("backtest:progress", handler);
+    },
+  },
   executor: {
     start: (id, symbols) => ipcRenderer.invoke("executor:start", id, symbols),
     stop: (id) => ipcRenderer.invoke("executor:stop", id),

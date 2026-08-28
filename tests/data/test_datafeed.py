@@ -126,3 +126,53 @@ def test_fetch_bars_or_mock_marks_mock():
         assert bars and all(b.get("is_mock") for b in bars)
     finally:
         df.fetch_bars = orig
+
+
+# ---------------------------------------------------------------------------
+# D0.4 缓存规格版本校验
+# ---------------------------------------------------------------------------
+
+def test_cache_spec_version_mismatch_ignored(tmp_path, monkeypatch):
+    """D0.4：缓存口径版本不一致时忽略缓存并清理旧数据（自愈式重新拉取）。"""
+    import db as db_cache
+    monkeypatch.setattr(db_cache, "DB_PATH", str(tmp_path / "test_cache.db"))
+    monkeypatch.setattr(db_cache, "_initialized", False)  # 强制在临时库建表
+
+    code, period, dt = "600519.SH", "1d", "front_ratio"
+    # 用旧版本（如 v1 手口径）写入缓存
+    db_cache.save_bars(code, period, _good_bars(20), dt, spec_version=1)
+    assert db_cache.get_count(code, period, dt) == 20
+
+    # 当前版本查询：版本不匹配 -> 忽略缓存并清理旧行
+    rows = db_cache.query_bars(code, period, -1, dt, spec_version=datafeed.DATA_SPEC_VERSION)
+    assert rows == []
+    assert db_cache.get_count(code, period, dt) == 0
+
+    # 重新按当前版本保存后可正常读取
+    db_cache.save_bars(code, period, _good_bars(20), dt, spec_version=datafeed.DATA_SPEC_VERSION)
+    rows = db_cache.query_bars(code, period, -1, dt, spec_version=datafeed.DATA_SPEC_VERSION)
+    assert len(rows) == 20
+
+
+def test_cache_spec_version_legacy_no_meta_ignored(tmp_path, monkeypatch):
+    """D0.4：无版本元数据记录的旧缓存同样被忽略（防旧口径污染）。"""
+    import db as db_cache
+    monkeypatch.setattr(db_cache, "DB_PATH", str(tmp_path / "test_cache2.db"))
+    monkeypatch.setattr(db_cache, "_initialized", False)
+
+    code, period, dt = "000001.SZ", "1d", "front_ratio"
+    # 模拟历史遗留缓存：只有 kline_history 行、没有 kline_meta 记录
+    db_cache.init_db()
+    conn = db_cache._get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO kline_history (code, period, date, open, high, low, close, volume, amount, dividend_type) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (code, period, "2024-01-01", 10, 10.5, 9.8, 10.2, 1e6, 1e7, dt),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    rows = db_cache.query_bars(code, period, -1, dt, spec_version=datafeed.DATA_SPEC_VERSION)
+    assert rows == []

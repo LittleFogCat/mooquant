@@ -15,7 +15,7 @@ class ModelService {
   constructor(options = {}) {
     this._options = options;
     this._proc = null;
-    this._port = options.port || 8765;
+    this._port = options.port || 18765;
     this._ready = false;
     this._initPromise = null;
     this._baseUrl = "http://127.0.0.1:" + this._port;

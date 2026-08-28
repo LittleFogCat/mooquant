@@ -48,7 +48,13 @@ def small_bars():
 def tmp_model_dir(tmp_path, monkeypatch):
     # Redirect ModelRegistry to a temp directory.
     from training import model_registry
-    monkeypatch.setattr(model_registry, 'MODEL_DIR', str(tmp_path / 'models'))
+    # 本机环境问题：sklearn/GBDT 测试之后，pytest 的 tmp_path 首次创建目录会出现
+    # ~32s 的异常 setup 慢速（拖慢全量套件）。改用 stdlib tempfile 直接建目录规避。
+    import tempfile
+    import shutil
+    d = tempfile.mkdtemp(prefix='mookquant_models_')
+    monkeypatch.setattr(model_registry, 'MODEL_DIR', d)
     # Clear cache
     model_registry.ModelRegistry._cache.clear()
-    return str(tmp_path / 'models')
+    yield d
+    shutil.rmtree(d, ignore_errors=True)

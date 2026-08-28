@@ -1,4 +1,4 @@
-﻿/**
+/**
  * mookquant · 回测引擎数据源
  *
  * spawn bridge/backtest_engine.py，通过 stdio JSON-RPC 通信。
@@ -16,6 +16,12 @@ class BacktestEngine {
     this._reqSeq = 0;
     this._pending = new Map();
     this._ready = false;
+    // 进度回调：onProgress({progress, stage, detail})，由 Python 推送 backtest.progress 触发
+    this._onProgress = options.onProgress || null;
+  }
+
+  onProgress(cb) {
+    this._onProgress = cb;
   }
 
   init() {
@@ -76,6 +82,11 @@ class BacktestEngine {
     let msg;
     try { msg = JSON.parse(line); }
     catch { return; }
+    // 进度通知（无 id）→ 转发给上层回调，不视为 RPC 响应
+    if (msg.id == null && msg.method === "backtest.progress") {
+      if (this._onProgress) this._onProgress(msg.params || {});
+      return;
+    }
     if (msg.id && this._pending.has(msg.id)) {
       const p = this._pending.get(msg.id);
       this._pending.delete(msg.id);
@@ -101,6 +112,17 @@ class BacktestEngine {
   async run(config) {
     if (!this._ready) await this.init();
     return await this._request("backtest.run", config);
+  }
+
+  // D4.3 回测历史管理：列表 + A/B 对比
+  async list(limit = 50) {
+    if (!this._ready) await this.init();
+    return await this._request("backtest.list", { limit });
+  }
+
+  async compare(ids = []) {
+    if (!this._ready) await this.init();
+    return await this._request("backtest.compare", { ids });
   }
 
   dispose() {

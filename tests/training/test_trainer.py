@@ -160,6 +160,7 @@ def test_ml_strategy_interpret_output_generates_signals():
     for strat_name, up_idx, flat_idx, down_idx in [
         ('lstm_trend', 2, 1, 0),
         ('transformer_trend', 2, 1, 0),
+        ('gbdt_classifier', 2, 1, 0),  # D3.3：GBDT 基线（输出即概率，无需 softmax）
     ]:
         cls = get(strat_name)
         strat = cls({'margin': 0.05})

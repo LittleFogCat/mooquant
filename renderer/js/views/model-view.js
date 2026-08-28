@@ -8,15 +8,18 @@ import * as StockSearch from './stock-search.js';
 
 // 训练表单字段说明（问号图标悬浮提示）
 const FIELD_TIPS = {
-  symbol: "训练标的，支持代码/名称搜索选择，多个用英文逗号分隔。多标的样本更丰富、模型泛化更好（单标的通常学不到有效信号）。",
-  period: "K线周期：1d 日线、1m/5m/15m/30m/60m 分钟线。周期越大每根K线时间跨度越大，信号越滞后。",
-  barCount: "每个标的取用的历史K线数量（50-5000）。数据越多样本越充足，建议 1000 以上；过多会拖慢训练。",
-  architecture: "模型结构：LSTM 擅长捕捉时序规律，MLP 轻量训练快，Transformer 能力强但需要更多数据。",
-  epochs: "训练迭代轮数（1-500）。越大拟合越充分，过大容易过拟合。",
-  learningRate: "学习率（0.00001-1）。过大会震荡不收敛，过小收敛缓慢，常用 0.001。",
-  hiddenSize: "隐藏层神经元数量（8-512）。越大表达力越强，也越容易过拟合。",
-  batchSize: "每批样本数（4-256）。越大训练越稳定，但占用内存越多。",
-  labelType: "标签生成方式：classification 预测涨跌分类（默认）、regression 回归预测收益率、triple_barrier 三重障碍法，更贴近实际交易。",
+  symbol: "训练标的，支持代码/名称搜索选择，多个用英文逗号分隔。\n· 多标的样本更丰富、模型泛化更好（单标的通常学不到有效信号）\n· 建议 3-8 个流动性好的标的（如 600519 贵州茅台、300750 宁德时代）\n· 不同板块/行业组合可提升模型对不同行情的适应能力",
+  period: "K线周期：1d 日线、1m/5m/15m/30m/60m 分钟线。\n· 周期越大每根K线时间跨度越大，信号越滞后，适合中长线\n· 分钟线适合日内/短线策略，但数据量需求更大\n· 训练与回测/实盘应使用同一周期，否则信号会错位",
+  rangeMode: "训练数据范围模式：\n· 按数量：取每个标的最新的 N 根K线（快速、数据量可控）\n· 按时间区间：按起止日期取数，适合对齐多标的到同一时间窗\n· 按时间区间时不受 barCount 限制，改由起止日期决定",
+  barCount: "每个标的取用的历史K线数量（50-5000）。\n· 数据越多样本越充足，建议 1000 以上\n· 过多会拖慢训练、占用内存；过少则样本不足，模型学不到有效规律",
+  startDate: "训练数据起始日期（仅“按时间区间”模式生效）。\n· 区间越长数据越多，训练越慢\n· 多标的会按该日期对齐取数\n· 请勿晚于结束日期",
+  endDate: "训练数据结束日期（仅“按时间区间”模式生效）。\n· 通常设为最近一个交易日，让模型学习最新行情\n· 请勿早于起始日期",
+  architecture: "模型结构：\n· LSTM：擅长捕捉时序规律，对K线序列建模效果好，训练中等，推荐首选\n· Transformer：注意力机制表达力强，但需要更多数据，训练慢\n· MLP：轻量、训练最快，适合数据量小或快速验证\n· GBDT：sklearn 树集成（HistGradientBoosting），CPU 友好、小样本稳健，推荐做表格基线",
+  epochs: "训练迭代轮数（1-500）。\n· 越大拟合越充分，过大容易过拟合（训练集好、样本外差）\n· 训练过程有早停机制，验证集不再提升会自动停止\n· 常用 50-150，数据量小时建议少一些",
+  learningRate: "学习率（0.00001-1）。\n· 过大会震荡不收敛，过小收敛缓慢\n· 常用 0.001；训练不收敛可试着调小（如 0.0001）",
+  hiddenSize: "隐藏层神经元数量（8-512）。\n· 越大表达力越强，也越容易过拟合\n· 数据量大可适当增大，数据量小建议保持较小值",
+  batchSize: "每批样本数（4-256）。\n· 越大训练越稳定，但占用内存越多\n· 显存/内存不足时可调小（如 16）",
+  labelType: "标签生成方式：\n· classification：预测未来涨/跌/平三分类，默认，直观易用\n· regression：回归预测未来收益率，输出连续值\n· triple_barrier：三重障碍法（止损/止盈/时间），更贴近实际交易但更复杂",
 };
 
 function fieldLabel(text, tip) {
@@ -131,14 +134,31 @@ function render(root, vm) {
       }
       html += '</select></div>';
 
-      // Bar count
-      html += '<div class="form-group">' + fieldLabel('\u6570\u636e\u91cf', FIELD_TIPS.barCount);
+      // Range mode (数量 / 时间区间)
+      html += '<div class="form-group">' + fieldLabel('\u8bad\u7ec3\u8303\u56f4', FIELD_TIPS.rangeMode);
+      html += '<select class="form-select" id="trainRangeMode">';
+      var rangeModes = ["count", "date"];
+      for (var rmi = 0; rmi < rangeModes.length; rmi++) {
+        html += '<option value="' + rangeModes[rmi] + '"' + (state.trainConfig.rangeMode === rangeModes[rmi] ? " selected" : "") + '>' + (rangeModes[rmi] === "count" ? '\u6309\u6570\u91cf' : '\u6309\u65f6\u95f4\u533a\u95f4') + '</option>';
+      }
+      html += '</select></div>';
+
+      // Bar count (仅按数量模式显示)
+      var showCount = state.trainConfig.rangeMode !== "date";
+      html += '<div class="form-group" id="trainBarCountGroup"' + (showCount ? "" : ' style="display:none"') + '>' + fieldLabel('\u6570\u636e\u91cf', FIELD_TIPS.barCount);
       html += '<input type="number" class="form-input" id="trainBarCount" value="' + state.trainConfig.barCount + '" min="50" max="5000" /></div>';
+
+      // Date range (仅按时间区间模式显示)
+      var showDate = state.trainConfig.rangeMode === "date";
+      html += '<div class="form-group" id="trainStartGroup"' + (showDate ? "" : ' style="display:none"') + '>' + fieldLabel('\u5f00\u59cb\u65e5\u671f', FIELD_TIPS.startDate);
+      html += '<input type="date" class="form-input" id="trainStart" value="' + escapeHtml(state.trainConfig.startDate || "") + '" /></div>';
+      html += '<div class="form-group" id="trainEndGroup"' + (showDate ? "" : ' style="display:none"') + '>' + fieldLabel('\u7ed3\u675f\u65e5\u671f', FIELD_TIPS.endDate);
+      html += '<input type="date" class="form-input" id="trainEnd" value="' + escapeHtml(state.trainConfig.endDate || "") + '" /></div>';
 
       // Architecture
       html += '<div class="form-group">' + fieldLabel('\u6a21\u578b\u67b6\u6784', FIELD_TIPS.architecture);
       html += '<select class="form-select" id="trainArch">';
-      var archs = ["lstm", "transformer", "mlp"];
+      var archs = ["lstm", "transformer", "mlp", "gbdt"];
       for (var ai = 0; ai < archs.length; ai++) {
         html += '<option value="' + archs[ai] + '"' + (state.trainConfig.architecture === archs[ai] ? " selected" : "") + '>' + archs[ai].toUpperCase() + '</option>';
       }
@@ -168,6 +188,16 @@ function render(root, vm) {
         html += '<option value="' + labels[li] + '"' + (state.trainConfig.labelType === labels[li] ? " selected" : "") + '>' + labels[li] + '</option>';
       }
       html += '</select></div>';
+
+      // D3.4 walk-forward 滚动样本外验证
+      html += '<div class="form-group" style="grid-column:1 / -1;display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
+      html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-2)">';
+      html += '<input type="checkbox" id="trainWalkForward"' + (state.trainConfig.walkForward ? ' checked' : '') + '/> walk-forward 稳健性验证';
+      html += '</label>';
+      html += '<span style="font-size:12px;color:var(--text-3)">段数</span>';
+      html += '<input type="number" id="trainWalkSegments" value="' + state.trainConfig.walkForwardSegments + '" min="2" max="6" style="width:60px" />';
+      html += '<span style="font-size:11px;color:var(--text-3)">按时间分段滚动训练+样本外评估，检验过拟合</span>';
+      html += '</div>';
 
       html += '</div>'; // train-form-grid
 
@@ -229,6 +259,27 @@ function render(root, vm) {
             }
             html += '</div>';
           }
+          // D3.4 walk-forward 稳定性报告
+          var wfr = tr.walk_forward;
+          if (wfr) {
+            var wfColor = wfr.verdict === "green" ? "var(--green)" : (wfr.verdict === "yellow" ? "#e6a700" : "var(--red)");
+            html += '<div style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px">';
+            html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">';
+            html += '<span style="font-size:13px;font-weight:600">walk-forward \u7a33\u5b9a\u6027\u62a5\u544a</span>';
+            html += '<span class="badge" style="color:' + wfColor + ';border:1px solid ' + wfColor + '">' + escapeHtml(wfr.stable || "") + '</span>';
+            html += '</div>';
+            html += '<p style="font-size:12px;color:var(--text-3)">' + escapeHtml(wfr.summary || "") + '</p>';
+            if (wfr.folds && wfr.folds.length) {
+              html += '<table class="data-table" style="font-size:11px;max-width:560px">';
+              html += '<thead><tr><th>\u6298\u53e0</th><th>\u8bad\u7ec3\u533a\u95f4</th><th>\u6d4b\u8bd5\u533a\u95f4</th><th class="num">\u6837\u672c\u5916\u51c6\u786e\u7387</th><th class="num">\u65b9\u5411F1</th><th class="num">\u6d4b\u8bd5\u6837\u672c</th></tr></thead><tbody>';
+              for (var fi2 = 0; fi2 < wfr.folds.length; fi2++) {
+                var f = wfr.folds[fi2];
+                html += '<tr><td>' + f.fold + '</td><td style="font-size:10px">' + escapeHtml(f.trainRange || "") + '</td><td style="font-size:10px">' + escapeHtml(f.testRange || "") + '</td><td class="num">' + (f.accuracy != null ? (f.accuracy * 100).toFixed(1) + '%' : '-') + '</td><td class="num">' + (f.directionF1 != null ? f.directionF1.toFixed(2) : '-') + '</td><td class="num">' + (f.nTest || 0) + '</td></tr>';
+              }
+              html += '</tbody></table>';
+            }
+            html += '</div>';
+          }
         } else if (ts.status === "running") {
           var stageLabel = ts.stage === "fetch" ? "\u6570\u636e\u52a0\u8f7d..." : (ts.stage === "build" ? "\u6784\u5efa\u6570\u636e\u96c6..." : (ts.stage === "save" ? "\u4fdd\u5b58\u6a21\u578b..." : "\u8bad\u7ec3\u4e2d..."));
           html += '<p style="color:var(--text-3);margin-top:8px;font-size:13px">' + stageLabel + ' ' + state.training.progress + '%</p>';
@@ -275,7 +326,10 @@ function render(root, vm) {
     // Train form fields (symbol handled by StockSearch above)
     var fields = [
       ["#trainPeriod", "period"],
+      ["#trainRangeMode", "rangeMode"],
       ["#trainBarCount", "barCount"],
+      ["#trainStart", "startDate"],
+      ["#trainEnd", "endDate"],
       ["#trainArch", "architecture"],
       ["#trainEpochs", "epochs"],
       ["#trainLR", "learningRate"],
@@ -288,6 +342,26 @@ function render(root, vm) {
         var el = root.querySelector(sel);
         if (el) el.addEventListener("input", function () { vm.setTrainField(key, el.value); });
       })(fields[fi][0], fields[fi][1]);
+    }
+    // D3.4 walk-forward 控件
+    var wfEl = root.querySelector("#trainWalkForward");
+    if (wfEl) wfEl.addEventListener("change", function () { vm.setTrainField("walkForward", wfEl.checked); });
+    var wfSegEl = root.querySelector("#trainWalkSegments");
+    if (wfSegEl) wfSegEl.addEventListener("input", function () { vm.setTrainField("walkForwardSegments", wfSegEl.value); });
+
+    // Range mode 切换：按数量 / 按时间区间，联动显示对应字段
+    var rangeModeEl = root.querySelector("#trainRangeMode");
+    if (rangeModeEl) {
+      rangeModeEl.addEventListener("change", function () {
+        var isDate = rangeModeEl.value === "date";
+        var countGroup = root.querySelector("#trainBarCountGroup");
+        var startGroup = root.querySelector("#trainStartGroup");
+        var endGroup = root.querySelector("#trainEndGroup");
+        if (countGroup) countGroup.style.display = isDate ? "none" : "";
+        if (startGroup) startGroup.style.display = isDate ? "" : "none";
+        if (endGroup) endGroup.style.display = isDate ? "" : "none";
+        vm.setTrainField("rangeMode", rangeModeEl.value);
+      });
     }
 
     var trainBtn = root.querySelector("#trainStartBtn");

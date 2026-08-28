@@ -66,14 +66,24 @@ def test_backtest_produces_trades_with_ma_cross(monkeypatch, real_bars):
 
 
 def test_backtest_uses_mock_when_no_real_data(monkeypatch):
-    """xtquant 无数据时回退模拟数据，且回测仍可运行。"""
+    """D0.3：显式 allowMock=True 时，无真实数据回退模拟数据且回测仍可运行。"""
     import backtest_engine
     monkeypatch.setattr(backtest_engine, "fetch_real_bars", lambda *a, **k: (None, "无历史数据"))
 
-    res = run_backtest(_make_params())
+    res = run_backtest(_make_params(allowMock=True))
     assert res["dataSource"] == "mock"
     assert len(res["bars"]) >= 5
     assert len(res["equityCurve"]) >= 5
+
+
+def test_backtest_mock_blocked_by_default(monkeypatch):
+    """D0.3：无真实数据且未显式允许时，默认拒绝使用模拟数据回测（阻断静默降级）。"""
+    import backtest_engine
+    monkeypatch.setattr(backtest_engine, "fetch_real_bars", lambda *a, **k: (None, "无历史数据"))
+
+    with pytest.raises(ValueError) as ei:
+        run_backtest(_make_params())
+    assert "模拟数据" in str(ei.value)
 
 
 def test_backtest_empty_symbols_raises():

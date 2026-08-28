@@ -115,14 +115,24 @@ if (window.mookquant && window.mookquant.facade) { return window.mookquant.facad
       if (!strat) return { ok: false, error: "strategy not found" };
       const initCap = config.initialCapital || 1000000; const days = 60, eq = [], trades = [];
       let cash = initCap, pos = 0, cp = 0;
-      for (let i = 0; i < days; i++) { const ret = (Math.random() - 0.5) * 0.02; const price = 100 * (1 + Math.sin(i / 10) * 0.1 + ret);
+      for (let i = 0; i < days; i++) {
+        // 浏览器 mock：模拟进度推送
+        if (backtestMock._onProgress && i % 5 === 0) {
+          backtestMock._onProgress({ progress: Math.round((i / days) * 90 + 5), stage: i < days / 2 ? "signal" : "match", detail: `${i + 1} / ${days}` });
+        }
+        const ret = (Math.random() - 0.5) * 0.02; const price = 100 * (1 + Math.sin(i / 10) * 0.1 + ret);
         if (i !== 0 && i % 20 === 0) { if (pos === 0) { pos = 100; cp = price; cash -= price * 100; trades.push({ date: "2024-01" + String(i).padStart(2, "0"), side: "buy", symbol: (strat.symbols||[])[0] || "sh600519", price: +price.toFixed(2), quantity: 100, amount: +(price*100).toFixed(2), pnl: null }); }
           else { const pnl = (price - cp) * 100; cash += price * 100; pos = 0; trades.push({ date: "2024-01" + String(i).padStart(2, "0"), side: "sell", symbol: (strat.symbols||[])[0] || "sh600519", price: +price.toFixed(2), quantity: 100, amount: +(price*100).toFixed(2), pnl: +pnl.toFixed(2) }); } }
         eq.push({ date: "2024-01" + String(i).padStart(2, "0"), value: +(cash + pos * price).toFixed(2) }); }
+      if (backtestMock._onProgress) backtestMock._onProgress({ progress: 100, stage: "finish", detail: "完成" });
       const fv = eq[eq.length - 1].value; const tr = (fv - initCap) / initCap * 100;
       const sells = trades.filter(t => t.side === "sell"); const wins = sells.filter(t => t.pnl > 0);
       return { ok: true, data: { metrics: { totalReturn: +tr.toFixed(2), annualReturn: +tr.toFixed(2), maxDrawdown: +(Math.random() * 5).toFixed(2), sharpeRatio: +(Math.random() * 1.5).toFixed(2), winRate: wins.length ? +(wins.length / sells.length * 100).toFixed(2) : 0, profitLossRatio: +(Math.random() * 2).toFixed(2), totalTrades: trades.length, finalCapital: +fv.toFixed(2) }, trades, equityCurve: eq } };
     },
+    onProgress: (cb) => { backtestMock._onProgress = cb; },
+    // D4.3 浏览器 mock：历史列表/对比返回空
+    list: async () => ({ ok: true, data: [] }),
+    compare: async () => ({ ok: true, data: [] }),
   };
   // Mock trade
   let _tCash = 1000000, _tPos = [], _tOrders = [], _odSeq = 0;
@@ -179,7 +189,7 @@ if (window.mookquant && window.mookquant.facade) { return window.mookquant.facad
       search: async (q) => ({ ok: true, data: searchStocks(q) }), status: async () => ({ mode: "mock", description: "mock", connected: false }) },
     strategy: strategyMock, backtest: backtestMock, trade: tradeMock, settings: settingsMock,
     modelServer: {
-    status: async () => ({ ok: false, data: { ready: false, port: 8765 } }),
+    status: async () => ({ ok: false, data: { ready: false, port: 18765 } }),
     listStrategies: async () => ({ ok: true, data: [] }),
     getStrategy: async () => ({ ok: true, data: {} }),
     addStrategy: async () => ({ ok: true, data: {} }),

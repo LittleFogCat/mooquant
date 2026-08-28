@@ -427,7 +427,7 @@ def handle_quote_history(params):
     period = params.get("period", "1d")
     count = int(params.get("count", -1))
     port = int(params.get("port", 58610))
-    dividend_type = params.get("dividend_type", "front")
+    dividend_type = params.get("dividend_type", "front_ratio")
 
     # --- Determine base period ---
     # Weekly/Monthly K: aggregate from daily bars

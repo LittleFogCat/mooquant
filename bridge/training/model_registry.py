@@ -32,6 +32,19 @@ class DummyModelWrapper(ModelWrapper):
         return tensor
 
 
+class SklearnModelWrapper(ModelWrapper):
+    """包装 sklearn 模型（GBDT 表格基线）用于推理。
+
+    forward 返回类别概率张量（与 GBDTModel.forward 一致，上层跳过 softmax）。
+    """
+    def __init__(self, model):
+        self._model = model
+
+    def forward(self, tensor):
+        import torch
+        return torch.tensor(self._model.predict_proba(tensor), dtype=torch.float32)
+
+
 MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))), 'data', 'models')
 
@@ -51,13 +64,20 @@ class ModelRegistry:
 
     @classmethod
     def save(cls, model, config, metrics, name):
-        import torch
         with cls._lock:
             cls._ensure_dir()
             model_id = cls._gen_id()
             mdir = os.path.join(MODEL_DIR, model_id)
             os.makedirs(mdir, exist_ok=True)
-            torch.save(model.state_dict(), os.path.join(mdir, 'model.pt'))
+            model_type = config.get('model_type', '')
+            if model_type == 'sklearn':
+                # sklearn 基线（GBDT）：整体 pickle 持久化（含 dims 与分类器）
+                import pickle
+                with open(os.path.join(mdir, 'model.pkl'), 'wb') as f:
+                    pickle.dump(model, f, protocol=pickle.HIGHEST_PROTOCOL)
+            else:
+                import torch
+                torch.save(model.state_dict(), os.path.join(mdir, 'model.pt'))
             meta = {
                 'model_id': model_id, 'name': name,
                 'arch': config.get('model_arch', ''),
@@ -90,6 +110,12 @@ class ModelRegistry:
         # Dummy models do not need torch
         if config.get('model_type') == 'dummy':
             wrapper = DummyModelWrapper()
+        elif config.get('model_type') == 'sklearn':
+            # sklearn 基线（GBDT）：反序列化后包 SklearnModelWrapper
+            import pickle
+            with open(os.path.join(mdir, 'model.pkl'), 'rb') as f:
+                model = pickle.load(f)
+            wrapper = SklearnModelWrapper(model)
         else:
             arch = config.get('model_arch', '')
             params = config.get('model_params', {})

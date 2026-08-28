@@ -10,7 +10,7 @@ class ModelViewModel {
     this.state = {
       // Service status
       serviceReady: false,
-      servicePort: 8765,
+      servicePort: 18765,
       // Models
       models: [],
       modelsLoading: false,
@@ -19,13 +19,19 @@ class ModelViewModel {
       trainConfig: {
         symbol: "",
         period: "1d",
+        rangeMode: "count",
         barCount: 500,
+        startDate: "",
+        endDate: "",
         architecture: "lstm",
         epochs: 80,
         learningRate: 0.001,
         hiddenSize: 64,
         batchSize: 32,
         labelType: "classification",
+        // D3.4 walk-forward 滚动样本外验证（默认关闭）
+        walkForward: false,
+        walkForwardSegments: 3,
       },
       // Active model
       activeModelId: "",
@@ -45,7 +51,7 @@ class ModelViewModel {
       const r = await this.facade.modelServer.status();
       this._set({
         serviceReady: r.ok && r.data ? r.data.ready : false,
-        servicePort: r.data ? r.data.port : 8765,
+        servicePort: r.data ? r.data.port : 18765,
       });
     } catch (e) {
       this._set({ serviceReady: false, error: e.message });
@@ -84,18 +90,34 @@ class ModelViewModel {
       this._set({ error: "\u8bf7\u8f93\u5165\u6807\u7684\u4ee3\u7801\uff08\u591a\u4e2a\u7528\u9017\u53f7\u5206\u9694\uff09" });
       return;
     }
+    const rangeMode = cfg.rangeMode === "date" ? "date" : "count";
+    if (rangeMode === "date") {
+      if (!cfg.startDate || !cfg.endDate) {
+        this._set({ error: "请选择训练时间区间（开始日期 + 结束日期）" });
+        return;
+      }
+      if (cfg.startDate > cfg.endDate) {
+        this._set({ error: "开始日期不能晚于结束日期" });
+        return;
+      }
+    }
     this._set({ training: { active: true, taskId: null, status: null, progress: 0 }, error: null });
     try {
       const r = await this.facade.modelServer.startTraining({
         symbols: symbols,
         period: cfg.period,
         bar_count: parseInt(cfg.barCount) || 500,
+        start_date: rangeMode === "date" ? cfg.startDate : null,
+        end_date: rangeMode === "date" ? cfg.endDate : null,
         architecture: cfg.architecture,
         epochs: parseInt(cfg.epochs) || 50,
         learning_rate: parseFloat(cfg.learningRate) || 0.001,
         hidden_size: parseInt(cfg.hiddenSize) || 64,
         batch_size: parseInt(cfg.batchSize) || 32,
         label_type: cfg.labelType,
+        // D3.4 walk-forward 滚动样本外验证
+        walk_forward: !!cfg.walkForward,
+        walk_forward_segments: parseInt(cfg.walkForwardSegments) || 3,
       });
       if (r.ok && r.data && r.data.task_id) {
         this.state.training.taskId = r.data.task_id;

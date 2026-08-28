@@ -88,7 +88,17 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
     ipcMain.handle("strategy:delete", async (_e, id) => { try { await strategyService.remove(id); return { ok: true, data: { id } }; } catch (e) { return { ok: false, error: e.message }; } });
   }
   // ---- 回测 ----
-  if (backtestService) { ipcMain.handle("backtest:run", async (_e, c) => { try { return await backtestService.run(c); } catch (e) { return { ok: false, error: e.message }; } }); }
+  if (backtestService) {
+    ipcMain.handle("backtest:run", async (_e, c) => { try { return await backtestService.run(c); } catch (e) { return { ok: false, error: e.message }; } });
+    // D4.3 回测历史管理
+    ipcMain.handle("backtest:list", async () => { try { return await backtestService.listResults(); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("backtest:compare", async (_e, ids) => { try { return await backtestService.compareResults(ids); } catch (e) { return { ok: false, error: e.message }; } });
+    // 回测进度推送：引擎 → 服务 → 渲染进程（backtest:progress 事件）
+    backtestService.onProgress((p) => {
+      const w = getMainWindow();
+      if (w && !w.isDestroyed()) w.webContents.send("backtest:progress", p);
+    });
+  }
   // ---- 交易 ----
   if (tradeService) {
     ipcMain.handle("trade:info", async () => ({ ok: true, data: tradeService.info }));

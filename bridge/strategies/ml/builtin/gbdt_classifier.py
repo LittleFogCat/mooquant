@@ -1,19 +1,20 @@
-# mookquant * LSTM trend prediction strategy (example ML strategy)
-# Uses a pretrained LSTM model to predict future price direction.
-# 信号决策：D3.5 期望收益决策（概率 × 期望幅度 − 成本，见 ml/base.py）。
+# mookquant * GBDT classification strategy (table baseline)
+# Uses a trained sklearn HistGradientBoosting model to predict direction probability.
+# 信号决策：D3.5 期望收益决策（概率 × 期望幅度 − 成本，见 ml/base.py）；
+# GBDT forward 直接返回类别概率（已归一化），无需 softmax。
 
 from strategies.registry import register
 from strategies.ml.base import MLStrategyBase
 
 
 @register
-class LSTMTrendStrategy(MLStrategyBase):
-    name = 'lstm_trend'
-    display_name = 'LSTM趋势预测'
-    description = '基于LSTM模型预测涨跌概率'
+class GBDTClassifierStrategy(MLStrategyBase):
+    name = 'gbdt_classifier'
+    display_name = 'GBDT分类预测'
+    description = '基于sklearn HistGradientBoosting预测涨跌概率（表格强基线）'
     version = '1.0'
     trigger_mode = 'bar'
-    model_arch = 'lstm'
+    model_arch = 'gbdt'
     is_ml = True
 
     params_schema = [
@@ -30,9 +31,8 @@ class LSTMTrendStrategy(MLStrategyBase):
     ]
 
     def interpret_output(self, output, bar, ctx):
-        import torch
-        probs = torch.softmax(output, dim=-1)
-        prob_up = probs[0][2].item()
-        prob_down = probs[0][0].item()
-        prob_flat = probs[0][1].item()
+        probs = output[0]
+        prob_up = float(probs[2]) if len(probs) > 2 else 0.0
+        prob_down = float(probs[0]) if len(probs) > 0 else 0.0
+        prob_flat = float(probs[1]) if len(probs) > 1 else 0.0
         return self._interpret_probs(prob_up, prob_down, prob_flat, bar, ctx)

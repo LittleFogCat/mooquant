@@ -19,12 +19,21 @@ class DataFetcher:
 
 class XtdataDataFetcher(DataFetcher):
     # Fetches data via the unified datafeed (single source of truth).
-    # 口径（v2，见 bridge/data/datafeed.py）：volume=股（×100）、front 前复权。
+    # 口径（v2，见 bridge/data/datafeed.py）：volume=股（×100）、front_ratio 前复权比例版。
     # 已废弃直接调用 xtquant 的旧实现（曾导致训练/回测口径漂移）。
     def fetch_bars(self, symbol, period, count):
         from data import datafeed
         bars, _source = datafeed.fetch_bars(symbol, period=period, count=count,
-                                            dividend_type="front")
+                                            dividend_type="front_ratio")
+        return bars
+
+    def fetch_bars_range(self, symbol, period, start_date, end_date):
+        # 按时间区间取数（训练范围选择）：与 count 模式共用统一 datafeed，
+        # 口径（单位/复权）完全一致
+        from data import datafeed
+        bars, _source = datafeed.fetch_bars(symbol, period=period,
+                                            start_date=start_date, end_date=end_date,
+                                            dividend_type="front_ratio")
         return bars
 
 
@@ -43,6 +52,11 @@ class MockDataFetcher(DataFetcher):
             bars.append({'date': f'2026-01-{i+1:02d}', 'open': o, 'high': h, 'low': l, 'close': c, 'volume': v})
             price = c
         return bars
+
+    def fetch_bars_range(self, symbol, period, start_date, end_date):
+        # 按区间生成模拟数据（与 fetch_bars 同分布，日期落在区间内）
+        from _shared import generate_mock_bars
+        return generate_mock_bars(symbol, start_date, end_date)
 
 
 def _default_data_fetcher():
@@ -100,7 +114,7 @@ class Trainer:
         from training.model_registry import ModelRegistry
 
         # 1. Parse config
-        data_cfg = config.get('data', {})
+        data_cfg = config.get('data', {}) or {}
         feat_cfg = config.get('feature_config', {})
         # 空特征配置给一组合理默认（v2 尺度不变特征）：
         # 裸 close/volume 依赖价格/单位尺度，口径漂移会造成分布外输入；
@@ -140,6 +154,8 @@ class Trainer:
         symbols = data_cfg.get('symbols', ['600036.SH'])
         period = data_cfg.get('period', '1d')
         count = data_cfg.get('count', 500)
+        start_date = data_cfg.get('start_date', '')
+        end_date = data_cfg.get('end_date', '')
 
         epochs = train_cfg.get('epochs', 50)
         batch_size = train_cfg.get('batch_size', 32)
@@ -151,8 +167,12 @@ class Trainer:
         self._report(5, 'fetch')
         bars_list = []
         skipped_symbols = []
+        use_range = bool(start_date and end_date)
         for sym in symbols:
-            bars = self.data_fetcher.fetch_bars(sym, period, count)
+            if use_range:
+                bars = self.data_fetcher.fetch_bars_range(sym, period, start_date, end_date)
+            else:
+                bars = self.data_fetcher.fetch_bars(sym, period, count)
             if bars and len(bars) > 0:
                 bars_list.append(bars)
             else:
@@ -239,7 +259,7 @@ class Trainer:
         model_params.setdefault('input_size', fb.n_features)
         # 各架构参数名不同：UI 统一传 hidden_size，按架构映射，避免
         # MLP/Transformer 因多余的 hidden_size 关键字报 TypeError
-        if model_arch == 'mlp':
+        if model_arch in ('mlp', 'gbdt'):
             model_params.setdefault('seq_len', feat_cfg.get('window', 20))
         hs = model_params.pop('hidden_size', None)
         if hs:
@@ -247,28 +267,15 @@ class Trainer:
                 model_params.setdefault('hidden_sizes', [hs])
             elif model_arch == 'transformer':
                 model_params.setdefault('d_model', hs)
+            elif model_arch == 'gbdt':
+                pass  # 树模型无 hidden_size（防多余参数报错）
             else:
                 model_params['hidden_size'] = hs
         model = build_model(model_arch, model_params)
+        is_sklearn = bool(getattr(model, 'is_sklearn', False))  # sklearn 基线走独立训练/持久化
 
-        # 6. Training loop
+        # 6. Training
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        model.to(device)
-        # 类别权重：分类任务用「频率的 sqrt 反比」做轻量加权（flat 略降权、buy/sell 略升权），
-        # 实测激进反频加权会压迫模型偏押单类（all-buy/all-sell），轻量加权更稳
-        class_weights = None
-        if is_classification:
-            import collections
-            cnt = collections.Counter(dataset.y.tolist())
-            if len(cnt) > 1:
-                n = sum(cnt.values())
-                class_weights = torch.tensor(
-                    [math.sqrt(n / (len(cnt) * max(cnt.get(c, 0), 1))) for c in range(max(cnt) + 1)],
-                    dtype=torch.float32).to(device)
-        criterion = torch.nn.CrossEntropyLoss(weight=class_weights) if is_classification else torch.nn.MSELoss()
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5, factor=0.5)
-
         best_val_loss = float('inf')
         best_train_loss = 0.0
         best_state = None
@@ -276,47 +283,80 @@ class Trainer:
         no_improve = 0
         train_log = []
 
-        # 训练阶段进度占 20% -> 95%，按 epoch 推进
-        progress_span = 95 - 20
-        for epoch in range(epochs):
-            self._report(20 + progress_span * (epoch + 1) / epochs, 'train')
-            model.train()
-            total_loss = 0
-            n_batches = 0
-            for X, y in train_loader:
-                X, y = X.to(device), y.to(device)
-                optimizer.zero_grad()
-                out = model(X)
-                loss = criterion(out, y)
-                loss.backward()
-                optimizer.step()
-                total_loss += loss.item()
-                n_batches += 1
-            train_loss = total_loss / max(1, n_batches)
-
-            model.eval()
-            val_loss, val_metric = self._evaluate(model, val_loader, criterion, device, is_classification)
-            scheduler.step(val_loss)
-
-            log_entry = {'epoch': epoch+1, 'train_loss': round(train_loss, 6),
-                         'val_loss': round(val_loss, 6), 'lr': optimizer.param_groups[0]['lr']}
+        if is_sklearn:
+            # ---- sklearn 表格基线（GBDT）：无 torch 训练循环，直接 fit + 验证 ----
+            self._report(30, 'train')
+            X_all, y_all = dataset.X, dataset.y
+            model.fit(X_all[:n_train], y_all[:n_train])
+            if n_train < len(X_all):
+                proba_va = model.predict_proba(X_all[n_train:])
+                pred_va = proba_va.argmax(axis=1)
+                best_val_accuracy = float((pred_va == y_all[n_train:].numpy().ravel()).mean())
+            best_train_loss = 0.0
+            best_val_loss = 0.0
+            best_state = 'sklearn'  # 占位：sklearn 持久化走 model_type=sklearn 分支
+            train_log.append({'epoch': 1, 'train_loss': 0, 'val_loss': 0,
+                              'accuracy': round(best_val_accuracy, 4)})
+            self._report(95, 'train')
+        else:
+            # ---- torch 训练循环 ----
+            model.to(device)
+            # 类别权重：分类任务用「频率的 sqrt 反比」做轻量加权（flat 略降权、buy/sell 略升权），
+            # 实测激进反频加权会压迫模型偏押单类（all-buy/all-sell），轻量加权更稳
+            class_weights = None
             if is_classification:
-                log_entry['accuracy'] = round(val_metric, 4)
-            train_log.append(log_entry)
+                import collections
+                cnt = collections.Counter(dataset.y.tolist())
+                if len(cnt) > 1:
+                    n = sum(cnt.values())
+                    class_weights = torch.tensor(
+                        [math.sqrt(n / (len(cnt) * max(cnt.get(c, 0), 1))) for c in range(max(cnt) + 1)],
+                        dtype=torch.float32).to(device)
+            criterion = torch.nn.CrossEntropyLoss(weight=class_weights) if is_classification else torch.nn.MSELoss()
+            optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5, factor=0.5)
 
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                best_train_loss = train_loss
-                best_val_accuracy = val_metric  # 与 best_state 同步记录
-                best_state = {k: v.clone() for k, v in model.state_dict().items()}
-                no_improve = 0
-            else:
-                no_improve += 1
-                if no_improve >= patience:
-                    break
+            # 训练阶段进度占 20% -> 95%，按 epoch 推进
+            progress_span = 95 - 20
+            for epoch in range(epochs):
+                self._report(20 + progress_span * (epoch + 1) / epochs, 'train')
+                model.train()
+                total_loss = 0
+                n_batches = 0
+                for X, y in train_loader:
+                    X, y = X.to(device), y.to(device)
+                    optimizer.zero_grad()
+                    out = model(X)
+                    loss = criterion(out, y)
+                    loss.backward()
+                    optimizer.step()
+                    total_loss += loss.item()
+                    n_batches += 1
+                train_loss = total_loss / max(1, n_batches)
+
+                model.eval()
+                val_loss, val_metric = self._evaluate(model, val_loader, criterion, device, is_classification)
+                scheduler.step(val_loss)
+
+                log_entry = {'epoch': epoch+1, 'train_loss': round(train_loss, 6),
+                             'val_loss': round(val_loss, 6), 'lr': optimizer.param_groups[0]['lr']}
+                if is_classification:
+                    log_entry['accuracy'] = round(val_metric, 4)
+                train_log.append(log_entry)
+
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    best_train_loss = train_loss
+                    best_val_accuracy = val_metric  # 与 best_state 同步记录
+                    best_state = {k: v.clone() for k, v in model.state_dict().items()}
+                    no_improve = 0
+                else:
+                    no_improve += 1
+                    if no_improve >= patience:
+                        break
 
         # 7. Restore best model and save
-        if best_state:
+        if best_state and not is_sklearn:
             model.load_state_dict(best_state)
         self._report(98, 'save')
 
@@ -333,7 +373,10 @@ class Trainer:
         # 7a. 体检报告（M3.3）：验证集混淆矩阵 + 概率分布 + 质量评分
         health_report = None
         if is_classification:
-            health_report = self._health_report(model, val_loader, device, dataset.y.tolist())
+            if is_sklearn:
+                health_report = self._health_report_sklearn(model, dataset.X[n_train:], dataset.y[n_train:])
+            else:
+                health_report = self._health_report(model, val_loader, device, dataset.y.tolist())
 
         full_config = {
             'model_arch': model_arch,
@@ -343,8 +386,10 @@ class Trainer:
             'train_config': train_cfg,
             'data': data_cfg,
         }
+        if is_sklearn:
+            full_config['model_type'] = 'sklearn'  # 持久化/加载分支：pickle 整体保存
         # 数据口径指纹 + 训练数据日期范围：推理/回测时校验，防口径漂移与样本内回测
-        full_config['data_fingerprint'] = datafeed.data_fingerprint('front')
+        full_config['data_fingerprint'] = datafeed.data_fingerprint('front_ratio')
         full_config['data_date_range'] = {
             'start': min((b['date'][:10] for bars in bars_list for b in bars[:1]), default=''),
             'end': max((b['date'][:10] for bars in bars_list for b in bars[-1:]), default=''),
@@ -371,9 +416,13 @@ class Trainer:
             metrics['quality_score'] = health_report.get('score', 0)
             metrics['degraded'] = health_report.get('grade') == 'red'
 
-        model_id = ModelRegistry.save(model, full_config, metrics, model_name)
+        # D3.4：save_model=False 时仅返回指标不落盘（walk-forward 折叠用）
+        if config.get('save_model', True):
+            model_id = ModelRegistry.save(model, full_config, metrics, model_name)
+        else:
+            model_id = ''
 
-        return {
+        result = {
             'model_id': model_id,
             'metrics': metrics,
             'train_log': train_log,
@@ -387,6 +436,181 @@ class Trainer:
             'label_dist': label_dist,
             'health_report': health_report,
         }
+        # D3.4：return_model=True 时带回内存模型与特征构建器（walk-forward 样本外评估用）
+        if config.get('return_model', False):
+            result['_model'] = model
+            result['_feature_builder'] = fb
+
+        # D3.4：walk-forward 滚动样本外评估（防过拟合，随训练结果返回稳定性报告）
+        if config.get('walk_forward'):
+            try:
+                result['walk_forward'] = self.walk_forward(
+                    config, n_segments=int(config.get('walk_forward_segments', 3) or 3))
+            except Exception as e:
+                result['walk_forward_error'] = str(e)
+
+        return result
+
+    # ------------------------------------------------------------------
+    # D3.4 walk-forward 滚动样本外评估（防过拟合核心）
+    # ------------------------------------------------------------------
+    def walk_forward(self, config, n_segments=3):
+        """数据按时间等分 n_segments 段；对每段 i≥1，用「该段之前」的数据训练、
+        该段做样本外评估（不参与训练），输出各段 accuracy 的均值/方差与稳定性结论。
+
+        - 折叠训练走 `self.train()`（save_model=False / return_model=True，不落盘）。
+        - 全部子训练统一走「区间模式」（count 模式先取一次转为有效区间），
+          保证折叠训练数据与分段数据同源一致。
+        - 仅支持分类标签（classification / triple_barrier）。
+
+        Returns:
+            {folds, meanAccuracy, stdAccuracy, nFolds, stable, verdict, summary}
+        """
+        import copy
+        import numpy as np
+        from strategies.ml.features import FeatureBuilder
+        from training.labels import (make_classification_labels, make_regression_labels,
+                                     make_triple_barrier_labels)
+
+        data_cfg = config.get('data', {}) or {}
+        symbols = data_cfg.get('symbols', ['600036.SH'])
+        period = data_cfg.get('period', '1d')
+        start_date = data_cfg.get('start_date', '')
+        end_date = data_cfg.get('end_date', '')
+        count = data_cfg.get('count', 0)
+
+        label_cfg = config.get('label_config', {}) or {}
+        label_type = label_cfg.get('type', 'classification')
+        if not is_classification_task(label_type):
+            raise ValueError('walk-forward 当前仅支持分类标签（classification / triple_barrier）')
+
+        # 取第一个有数据的标的做分段评估（多标的下近似）
+        sym = None
+        probe_bars = []
+        for s in symbols:
+            if start_date and end_date:
+                b = self.data_fetcher.fetch_bars_range(s, period, start_date, end_date)
+            else:
+                b = self.data_fetcher.fetch_bars(s, period, count or 0)
+            if b:
+                sym, probe_bars = s, b
+                break
+        if sym is None or not probe_bars:
+            raise RuntimeError('No data fetched')
+        # 统一转区间模式，保证折叠训练与分段同源
+        if not (start_date and end_date):
+            start_date = probe_bars[0]['date'][:10]
+            end_date = probe_bars[-1]['date'][:10]
+        bars = self.data_fetcher.fetch_bars_range(sym, period, start_date, end_date)
+        if not bars or len(bars) < 10:
+            raise RuntimeError('walk-forward 数据不足')
+
+        n = len(bars)
+        seg_size = n // n_segments
+        if seg_size < 20:
+            raise ValueError('数据量不足以做 walk-forward（每段至少 20 根，当前 {}/{}）'.format(seg_size, n_segments))
+
+        label_fn_name = LABEL_FNS.get(label_type, 'make_classification_labels')
+        label_fn = {
+            'make_classification_labels': make_classification_labels,
+            'make_regression_labels': make_regression_labels,
+            'make_triple_barrier_labels': make_triple_barrier_labels,
+        }[label_fn_name]
+        label_params = {k: v for k, v in label_cfg.items() if k != 'type'}
+
+        folds = []
+        for i in range(1, n_segments):
+            train_end = i * seg_size
+            test_end = n if i == n_segments - 1 else (i + 1) * seg_size
+            test_bars = bars[train_end:test_end]
+            if len(test_bars) < 5:
+                continue
+            fold_cfg = copy.deepcopy(config)
+            fold_cfg['data'] = dict(data_cfg)
+            fold_cfg['data']['symbols'] = [sym]
+            fold_cfg['data']['start_date'] = bars[0]['date'][:10]
+            fold_cfg['data']['end_date'] = bars[train_end - 1]['date'][:10]
+            fold_cfg['data'].pop('count', None)
+            fold_cfg['save_model'] = False
+            fold_cfg['return_model'] = True
+            fold_cfg['walk_forward'] = False
+
+            r = self.train(fold_cfg)
+            model = r.get('_model')
+            fb = r.get('_feature_builder')
+            if model is None or fb is None:
+                continue
+            X = fb.build_batch(test_bars)
+            labels = label_fn(test_bars, **label_params)
+            offset = fb.window - 1
+            m = min(len(X), len(labels) - offset)
+            if m <= 0:
+                continue
+            pred = self._predict_labels(model, X[:m])
+            true = np.asarray(labels[offset:offset + m])
+            acc = float(np.mean(pred == true))
+            f1_0 = self._class_f1(pred, true, 0)
+            f1_2 = self._class_f1(pred, true, 2)
+            direction_f1 = ((f1_0 + f1_2) / 2) if (f1_0 is not None and f1_2 is not None) else None
+            folds.append({
+                'fold': i,
+                'trainRange': '{} ~ {}'.format(bars[0]['date'][:10], bars[train_end - 1]['date'][:10]),
+                'testRange': '{} ~ {}'.format(bars[train_end]['date'][:10], bars[test_end - 1]['date'][:10]),
+                'accuracy': round(acc, 4),
+                'directionF1': round(direction_f1, 4) if direction_f1 is not None else None,
+                'nTest': int(m),
+            })
+
+        if not folds:
+            raise RuntimeError('walk-forward 无有效折叠（数据量或标签不足）')
+
+        accs = [f['accuracy'] for f in folds]
+        mean_acc = float(np.mean(accs))
+        std_acc = float(np.std(accs))
+        if std_acc <= 0.05:
+            stable = '稳定'
+        elif std_acc <= 0.15:
+            stable = '一般'
+        else:
+            stable = '不稳定（过拟合风险）'
+        verdict = 'green' if (std_acc <= 0.05 and mean_acc >= 0.4) else ('yellow' if std_acc <= 0.15 else 'red')
+        summary = 'walk-forward {} 段样本外：准确率 {:.1%} ± {:.1%}（{}）'.format(
+            len(folds), mean_acc, std_acc, stable)
+        return {
+            'folds': folds,
+            'meanAccuracy': round(mean_acc, 4),
+            'stdAccuracy': round(std_acc, 4),
+            'nFolds': len(folds),
+            'stable': stable,
+            'verdict': verdict,
+            'summary': summary,
+        }
+
+    @staticmethod
+    def _predict_labels(model, X):
+        """模型预测类别标签（兼容 torch 与 sklearn，D3.4）。"""
+        import numpy as np
+        if getattr(model, 'is_sklearn', False):
+            return model.predict_proba(X).argmax(axis=1)
+        import torch
+        device = next(model.parameters()).device
+        X = X.to(device)
+        with torch.no_grad():
+            out = model(X)
+            probs = torch.softmax(out, dim=-1)
+            return probs.argmax(dim=1).cpu().numpy()
+
+    @staticmethod
+    def _class_f1(pred, true, cls):
+        """单类别 F1（无该类正样本或预测时返回 None）。"""
+        tp = int(((pred == cls) & (true == cls)).sum())
+        fp = int(((pred == cls) & (true != cls)).sum())
+        fn = int(((pred != cls) & (true == cls)).sum())
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        if precision + recall <= 0:
+            return None
+        return 2 * precision * recall / (precision + recall)
 
     def _health_report(self, model, val_loader, device, all_labels):
         """训练体检报告（M3.3）：验证集混淆矩阵、概率分布、质量评分。
@@ -414,6 +638,14 @@ class Trainer:
                         confusion[yi][pi] += 1
                 max_probs.extend(conf.tolist())
                 correct_flags.extend([1 if a == b else 0 for a, b in zip(y.tolist(), pred.tolist())])
+
+        n_val = sum(sum(row) for row in confusion)
+        if n_val == 0:
+            return None
+        return self._score_health(confusion, max_probs, correct_flags)
+
+    def _score_health(self, confusion, max_probs, correct_flags):
+        """根据混淆矩阵/置信度/正确标记计算体检评分（torch 与 sklearn 基线共用）。"""
 
         n_val = sum(sum(row) for row in confusion)
         if n_val == 0:
@@ -471,6 +703,22 @@ class Trainer:
             'accuracy': round(acc_all, 4),
             'non_flat_pred_ratio': round(non_flat_pred_ratio, 4),
         }
+
+    def _health_report_sklearn(self, model, X_va, y_va):
+        """sklearn 基线体检报告（与 torch 版输出结构一致，D3.3）。"""
+        proba = model.predict_proba(X_va)
+        pred = proba.argmax(axis=1)
+        y = y_va.numpy().ravel()
+        confusion = [[0, 0, 0] for _ in range(3)]
+        max_probs = []
+        correct_flags = []
+        for yi, pi, ci in zip(y, pred, proba.max(axis=1)):
+            yi, pi = int(yi), int(pi)
+            if 0 <= yi < 3 and 0 <= pi < 3:
+                confusion[yi][pi] += 1
+            max_probs.append(float(ci))
+            correct_flags.append(1 if yi == pi else 0)
+        return self._score_health(confusion, max_probs, correct_flags)
 
     def _evaluate(self, model, loader, criterion, device, is_classification):
         import torch

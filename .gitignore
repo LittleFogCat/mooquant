@@ -62,3 +62,6 @@ _chk.js
 _p.js
 _screencap.js
 _tmp_screenshot.js
+
+# 诊断包导出（运行时产物）
+data/diagnostics/

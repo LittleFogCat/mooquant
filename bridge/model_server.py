@@ -207,6 +207,10 @@ def _normalize_train_config(config):
         data['period'] = config['period']
     if config.get('bar_count'):
         data['count'] = config['bar_count']
+    if config.get('start_date'):
+        data['start_date'] = config['start_date']
+    if config.get('end_date'):
+        data['end_date'] = config['end_date']
     if data:
         nested['data'] = data
 
@@ -236,6 +240,11 @@ def _normalize_train_config(config):
     for k in ('model_name', 'name', 'parent_model_id'):
         if config.get(k):
             nested[k] = config[k]
+    # D3.4 walk-forward 滚动样本外验证
+    if config.get('walk_forward'):
+        nested['walk_forward'] = True
+        if config.get('walk_forward_segments'):
+            nested['walk_forward_segments'] = int(config['walk_forward_segments'])
     return nested
 
 
@@ -427,7 +436,7 @@ class ModelHandler(BaseHTTPRequestHandler):
         print('[model-server] ' + (format % args))
 
 
-def run(port=8765):
+def run(port=18765):
     _ensure_loaded()
     server = HTTPServer(('127.0.0.1', port), ModelHandler)
     print('[model-server] listening on 127.0.0.1:' + str(port))
@@ -435,5 +444,5 @@ def run(port=8765):
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('MODEL_SERVER_PORT', '8765'))
+    port = int(os.environ.get('MODEL_SERVER_PORT', '18765'))
     run(port)

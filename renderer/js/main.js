@@ -88,6 +88,7 @@ safe('回测页', () => {
   const backtestVM = new BacktestViewModel(facade);
   BacktestView.render(document.getElementById("backtestContainer"), backtestVM);
   Router.onEnter("backtest", () => backtestVM.loadStrategies());
+  Router.onLeave("backtest", () => backtestVM.unsubscribeProgress());
 });
 
 // ---- 交易页 ----

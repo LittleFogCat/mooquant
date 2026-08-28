@@ -19,6 +19,6 @@
   },
   "tradeSource": "mock",
   "modelServer": {
-    "port": 8766
+    "port": 18765
   }
 }

@@ -184,10 +184,10 @@ def test_fingerprint_gate_rejects_mismatch(tmp_model_dir):
     from training.model_registry import ModelRegistry
     from data import datafeed
     _w, cfg = ModelRegistry.load(result['model_id'])
-    # 篡改指纹后校验应失败
+    # 篡改指纹后校验应失败（用不同复权口径生成指纹）
     bad_fp = datafeed.data_fingerprint('none')
-    ok, reason = datafeed.check_fingerprint(bad_fp, 'front')
+    ok, reason = datafeed.check_fingerprint(bad_fp, 'front_ratio')
     assert not ok
-    # 正确指纹通过
-    ok, _ = datafeed.check_fingerprint(cfg['data_fingerprint'], 'front')
+    # 正确指纹通过（默认口径 front_ratio）
+    ok, _ = datafeed.check_fingerprint(cfg['data_fingerprint'], 'front_ratio')
     assert ok
