@@ -5,6 +5,7 @@
  * Communicates with model_server.py via ModelViewModel.
  */
 import * as StockSearch from './stock-search.js';
+import { escapeHtml } from '../utils/format.js';
 
 // 训练表单字段说明（问号图标悬浮提示）
 const FIELD_TIPS = {
@@ -26,12 +27,6 @@ function fieldLabel(text, tip) {
   return '<label class="form-label">' + text + '<span class="form-hint" tabindex="0" data-tip="' + escapeHtml(tip) + '">?</span></label>';
 }
 
-function escapeHtml(s) {
-  return String(s == null ? "" : s).replace(/[&<>"'\/]/g, function (c) {
-    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;", "/": "&#x2F;" }[c];
-  });
-}
-
 function fmtDate(s) {
   if (!s) return "-";
   var d = s.replace("T", " ");
@@ -45,9 +40,9 @@ function render(root, vm) {
 
     // ---- Error toast ----
     if (state.error) {
-      html += '<div class="status error" style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">';
+      html += '<div class="status error" style="margin-bottom:16px">';
       html += '<span>' + escapeHtml(state.error) + '</span>';
-      html += '<button class="btn btn-sm" data-dismiss-error style="color:var(--text-3)">&times;</button>';
+      html += '<button class="status-dismiss" data-dismiss-error>&times;</button>';
       html += '</div>';
     }
 
@@ -72,44 +67,106 @@ function render(root, vm) {
       html += '</div>';
     } else {
 
-      // ---- Model list ----
+      // ---- Model list / trash ----
+      var inTrash = state.view === "trash";
+      var list = inTrash ? state.trash : state.models;
+      var listLoading = inTrash ? state.trashLoading : state.modelsLoading;
+      var showCheck = inTrash || state.batchMode;
+      var showDrag = !inTrash && state.batchMode && state.reorderMode;
+      var selCount = Object.keys(state.selected).length;
+      var selectable = list.filter(function (x) { return x.status !== "builtin"; });
+      var allChecked = showCheck && selectable.length > 0 && selectable.every(function (x) { return !!state.selected[x.model_id]; });
+
       html += '<div class="card">';
-      html += '<div class="card-title">\u6a21\u578b\u7ba1\u7406 (' + state.models.length + ')</div>';
-      if (state.modelsLoading) {
+      html += '<div class="card-title-bar">';
+      html += '<div class="card-title">' + (inTrash ? '\u56de\u6536\u7ad9 (' + list.length + ')' : '\u6a21\u578b\u7ba1\u7406 (' + list.length + ')') + '</div>';
+      html += '<div class="card-title-actions">';
+      html += '<button class="btn btn-sm ' + (!inTrash ? "btn-active" : "btn-secondary") + '" data-view="models">\u6a21\u578b\u5217\u8868</button>';
+      html += '<button class="btn btn-sm ' + (inTrash ? "btn-active" : "btn-secondary") + '" data-view="trash">\u56de\u6536\u7ad9 (' + state.trash.length + ')</button>';
+      if (!inTrash) {
+        html += '<button class="btn btn-sm ' + (state.batchMode ? "btn-active" : "btn-secondary") + '" id="modelBatchToggle">' + (state.batchMode ? '\u9000\u51fa\u6279\u91cf' : '\u6279\u91cf\u7ba1\u7406') + '</button>';
+      }
+      html += '</div></div>';
+      if (!inTrash && state.batchMode) {
+        html += '<div class="bulk-bar">';
+        html += '<span class="bulk-count">\u5df2\u9009 ' + selCount + ' \u9879</span>';
+        html += '<button class="btn btn-sm ' + (state.reorderMode ? "btn-active" : "btn-secondary") + '" id="bulkReorder">' + (state.reorderMode ? '\u5b8c\u6210\u6392\u5e8f' : '\u987a\u5e8f\u7f16\u8f91') + '</button>';
+        html += '<button class="btn btn-sm btn-secondary" id="bulkClear"' + (selCount ? '' : ' disabled') + '>\u6e05\u7a7a\u9009\u62e9</button>';
+        html += '<button class="btn btn-sm btn-danger" id="bulkTrash"' + (selCount ? '' : ' disabled') + '>\u79fb\u5165\u56de\u6536\u7ad9</button>';
+        html += '</div>';
+      }
+      if (inTrash) {
+        html += '<div class="bulk-bar">';
+        html += '<span class="bulk-count">\u5df2\u9009 ' + selCount + ' \u9879</span>';
+        html += '<button class="btn btn-sm btn-secondary" id="trashRestore"' + (selCount ? '' : ' disabled') + '>\u6062\u590d</button>';
+        html += '<button class="btn btn-sm btn-danger" id="trashPurge"' + (selCount ? '' : ' disabled') + '>\u5f7b\u5e95\u5220\u9664</button>';
+        html += '<button class="btn btn-sm btn-danger" id="trashEmpty"' + (state.trash.length ? '' : ' disabled') + '>\u6e05\u7a7a\u56de\u6536\u7ad9</button>';
+        html += '</div>';
+      }
+      if (listLoading) {
         html += '<p style="color:var(--text-3)">\u52a0\u8f7d\u4e2d...</p>';
-      } else if (state.models.length === 0) {
-        html += '<p style="color:var(--text-3)">\u6682\u65e0\u6a21\u578b\uff0c\u8bf7\u5148\u8bad\u7ec3\u4e00\u4e2a\u6a21\u578b</p>';
+      } else if (list.length === 0) {
+        html += '<p style="color:var(--text-3)">' + (inTrash ? '\u56de\u6536\u7ad9\u662f\u7a7a\u7684' : '\u6682\u65e0\u6a21\u578b\uff0c\u8bf7\u5148\u8bad\u7ec3\u4e00\u4e2a\u6a21\u578b') + '</p>';
       } else {
-        html += '<div class="table-wrap"><table class="data-table">';
-        html += '<thead><tr><th>\u540d\u79f0</th><th>model_id</th><th>\u67b6\u6784</th><th>\u4f53\u68c0</th><th>\u521b\u5efa\u65f6\u95f4</th><th>\u6807\u7684</th><th>\u72b6\u6001</th><th>\u64cd\u4f5c</th></tr></thead>';
+        html += '<div class="table-wrap"><table class="data-table" id="modelTable">';
+        html += '<thead><tr>';
+        if (showDrag) html += '<th style="width:28px"></th>';
+        if (showCheck) html += '<th style="width:36px"><input type="checkbox" id="modelSelectAll"' + (allChecked ? ' checked' : '') + ' /></th>';
+        if (inTrash) {
+          html += '<th>\u540d\u79f0</th><th>\u67b6\u6784</th><th>\u5220\u9664\u65f6\u95f4</th><th>\u64cd\u4f5c</th>';
+        } else {
+          html += '<th>\u540d\u79f0</th><th>\u67b6\u6784</th><th>\u4f53\u68c0</th><th>\u521b\u5efa\u65f6\u95f4</th><th>\u64cd\u4f5c</th>';
+        }
+        html += '</tr></thead>';
         html += '<tbody>';
-        for (var i = 0; i < state.models.length; i++) {
-          var m = state.models[i];
+        for (var i = 0; i < list.length; i++) {
+          var m = list[i];
           var quality = m.metrics ? (m.metrics.quality_score != null ? m.metrics.quality_score : null) : null;
           var grade = m.metrics && m.metrics.degraded ? "red" : (quality == null ? null : (quality >= 60 ? "green" : (quality >= 35 ? "yellow" : "red")));
-          html += '<tr>';
-          html += '<td>' + escapeHtml(m.name) + '</td>';
-          html += '<td style="font-size:11px;color:var(--text-3);font-family:monospace">' + escapeHtml(m.model_id) + '</td>';
-          html += '<td><span class="badge badge-active">' + escapeHtml(m.arch || "-") + '</span></td>';
-          // 质量徽章：红黄绿三档 + 分数；旧模型无体检数据显示 -
-          html += '<td>';
-          if (grade) {
-            var gLabel = { green: "\u2713 \u826f\u597d", yellow: "~ \u4e00\u822c", red: "\u2717 \u4e0d\u5408\u683c" }[grade];
-            var gClass = { green: "badge-active", yellow: "badge-draft", red: "badge-inactive" }[grade];
-            html += '<span class="badge ' + gClass + '" title="\u4f53\u68c0\u8bc4\u5206 ' + quality + '/100\uff08\u65b9\u5411F1+\u591a\u6837\u6027+\u7f6e\u4fe1\u5ea6\uff09">' + gLabel + ' ' + quality + '</span>';
-          } else {
-            html += '<span style="color:var(--text-3)">-</span>';
+          var isBuiltin = m.status === "builtin";
+          var checked = state.selected[m.model_id] ? " checked" : "";
+          html += '<tr' + (showDrag ? ' draggable="true"' : '') + ' data-row-model="' + escapeHtml(m.model_id) + '">';
+          if (showDrag) html += '<td class="drag-handle" title="按住拖动调整顺序">⣿</td>';
+          if (showCheck) {
+            if (isBuiltin && !inTrash) {
+              html += '<td title="内置模型不可删除"><input type="checkbox" disabled /></td>';
+            } else {
+              html += '<td><input type="checkbox" data-sel-model="' + escapeHtml(m.model_id) + '"' + checked + ' /></td>';
+            }
           }
-          html += '</td>';
-          html += '<td>' + fmtDate(m.created_at) + '</td>';
-          html += '<td style="font-size:12px">' + escapeHtml((m.symbols || []).join(", ") || "-") + '</td>';
-          html += '<td><span class="badge ' + (m.status === "active" ? "badge-active" : "badge-draft") + '">' + escapeHtml(m.status || "-") + '</span></td>';
-          var isActive = state.activeModelId === m.model_id;
-          html += '<td style="white-space:nowrap">';
-          html += '<button class="btn btn-sm ' + (isActive ? "btn-active" : "") + '" data-activate-model="' + escapeHtml(m.model_id) + '"' + (isActive ? ' disabled' : '') + '>' + (isActive ? '\u2713 \u5df2\u6fc0\u6d3b' : '\u6fc0\u6d3b') + '</button> ';
-          html += '<button class="btn btn-sm btn-secondary" data-edit-model="' + escapeHtml(m.model_id) + '" data-edit-name="' + escapeHtml(m.name) + '">\u7f16\u8f91</button> ';
-          html += '<button class="btn btn-sm" style="color:var(--red)" data-delete-model="' + escapeHtml(m.model_id) + '">\u5220\u9664</button>';
-          html += '</td>';
+          html += '<td>' + escapeHtml(m.name) + (isBuiltin ? '<span class="badge-builtin">built-in</span>' : '') + '</td>';
+          html += '<td><span class="badge badge-active">' + escapeHtml(m.arch || "-") + '</span></td>';
+          if (inTrash) {
+            html += '<td>' + fmtDate(m.deleted_at) + '</td>';
+            html += '<td style="white-space:nowrap">';
+            html += '<button class="btn btn-sm btn-secondary" data-restore-model="' + escapeHtml(m.model_id) + '">恢复</button> ';
+            html += '<button class="btn btn-sm btn-danger" data-purge-model="' + escapeHtml(m.model_id) + '">彻底删除</button>';
+            html += '</td>';
+          } else {
+            // 质量徽章：红黄绿三档 + 分数；旧模型无体检数据显示 -
+            html += '<td>';
+            if (grade) {
+              var gLabel = { green: "\u2713 \u826f\u597d", yellow: "~ \u4e00\u822c", red: "\u2717 \u4e0d\u5408\u683c" }[grade];
+              var gClass = { green: "badge-grade-green", yellow: "badge-grade-yellow", red: "badge-grade-red" }[grade];
+              html += '<span class="badge ' + gClass + '" title="\u4f53\u68c0\u8bc4\u5206 ' + quality + '/100\uff08\u65b9\u5411F1+\u591a\u6837\u6027+\u7f6e\u4fe1\u5ea6\uff09">' + gLabel + ' ' + quality + '</span>';
+            } else {
+              html += '<span style="color:var(--text-3)">-</span>';
+            }
+            html += '</td>';
+            html += '<td>' + fmtDate(m.created_at) + '</td>';
+            var isActive = state.activeModelId === m.model_id;
+            var detailTip = "ID: " + (m.model_id || "-") + "\n\u6807\u7684: " + ((m.symbols || []).join(", ") || "-");
+            html += '<td style="white-space:nowrap">';
+            html += '<button class="btn btn-sm ' + (isActive ? "btn-active" : "") + '" data-activate-model="' + escapeHtml(m.model_id) + '"' + (isActive ? ' disabled' : '') + '>' + (isActive ? '\u2713 \u5df2\u6fc0\u6d3b' : '\u6fc0\u6d3b') + '</button> ';
+            html += '<button class="btn btn-sm btn-secondary" title="' + escapeHtml(detailTip) + '">\u8be6\u60c5</button> ';
+            html += '<button class="btn btn-sm btn-secondary" data-edit-model="' + escapeHtml(m.model_id) + '" data-edit-name="' + escapeHtml(m.name) + '">\u7f16\u8f91</button> ';
+            if (isBuiltin) {
+              html += '<span class="btn btn-sm btn-danger is-disabled" title="\u5185\u7f6e\u6a21\u578b\u4e0d\u53ef\u5220\u9664">\u5220\u9664</span>';
+            } else {
+              html += '<button class="btn btn-sm btn-danger" data-delete-model="' + escapeHtml(m.model_id) + '">\u5220\u9664</button>';
+            }
+            html += '</td>';
+          }
           html += '</tr>';
         }
         html += '</tbody></table></div>';
@@ -223,12 +280,12 @@ function render(root, vm) {
           var hr = tr.health_report;
           var mm = tr.metrics || {};
           if (hr) {
-            var gradeColor = hr.grade === "green" ? "var(--green)" : (hr.grade === "yellow" ? "#e6a700" : "var(--red)");
+            var gradeClass = { green: "badge-grade-green", yellow: "badge-grade-yellow", red: "badge-grade-red" }[hr.grade] || "badge-draft";
             var gradeText = hr.grade === "green" ? "\u826f\u597d" : (hr.grade === "yellow" ? "\u4e00\u822c" : "\u4e0d\u5408\u683c");
-            html += '<div style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px">';
+            html += '<div class="card-inner" style="margin-top:12px">';
             html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">';
             html += '<span style="font-size:13px;font-weight:600">\u6a21\u578b\u4f53\u68c0\u62a5\u544a</span>';
-            html += '<span class="badge" style="color:' + gradeColor + ';border:1px solid ' + gradeColor + '">' + gradeText + ' ' + hr.score + '/100</span>';
+            html += '<span class="badge ' + gradeClass + '">' + gradeText + ' ' + hr.score + '/100</span>';
             html += '<span style="font-size:12px;color:var(--text-3)">\u65b9\u5411F1: ' + (hr.direction_f1 != null ? hr.direction_f1 : "-") + ' \u00b7 \u9a8c\u8bc1\u6807\u672c: ' + (hr.n_val || 0) + '</span>';
             html += '</div>';
             // 混淆矩阵（3x3 简表）
@@ -262,11 +319,11 @@ function render(root, vm) {
           // D3.4 walk-forward 稳定性报告
           var wfr = tr.walk_forward;
           if (wfr) {
-            var wfColor = wfr.verdict === "green" ? "var(--green)" : (wfr.verdict === "yellow" ? "#e6a700" : "var(--red)");
-            html += '<div style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px">';
+            var wfClass = { green: "badge-grade-green", yellow: "badge-grade-yellow", red: "badge-grade-red" }[wfr.verdict] || "badge-draft";
+            html += '<div class="card-inner" style="margin-top:12px">';
             html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">';
             html += '<span style="font-size:13px;font-weight:600">walk-forward \u7a33\u5b9a\u6027\u62a5\u544a</span>';
-            html += '<span class="badge" style="color:' + wfColor + ';border:1px solid ' + wfColor + '">' + escapeHtml(wfr.stable || "") + '</span>';
+            html += '<span class="badge ' + wfClass + '">' + escapeHtml(wfr.stable || "") + '</span>';
             html += '</div>';
             html += '<p style="font-size:12px;color:var(--text-3)">' + escapeHtml(wfr.summary || "") + '</p>';
             if (wfr.folds && wfr.folds.length) {
@@ -404,6 +461,96 @@ function render(root, vm) {
           }
         });
       })(editBtns[ei2]);
+    }
+
+    // ---- 视图切换 / 批量管理 / 回收站 ----
+    root.querySelectorAll("[data-view]").forEach(function (btn) {
+      btn.addEventListener("click", function () { vm.setView(btn.getAttribute("data-view")); });
+    });
+    var batchToggle = root.querySelector("#modelBatchToggle");
+    if (batchToggle) batchToggle.addEventListener("click", function () { vm.toggleBatchMode(); });
+
+    var reorderBtn = root.querySelector("#bulkReorder");
+    if (reorderBtn) reorderBtn.addEventListener("click", function () { vm.toggleReorderMode(); });
+
+    var clearBtn = root.querySelector("#bulkClear");
+    if (clearBtn) clearBtn.addEventListener("click", function () { vm.clearSelection(); });
+
+    var selAll = root.querySelector("#modelSelectAll");
+    if (selAll) selAll.addEventListener("change", function () {
+      vm.selectAll(state.view === "trash" ? state.trash : state.models, selAll.checked);
+    });
+
+    root.querySelectorAll("[data-sel-model]").forEach(function (cb) {
+      cb.addEventListener("change", function () { vm.toggleSelect(cb.getAttribute("data-sel-model")); });
+    });
+
+    var bulkTrash = root.querySelector("#bulkTrash");
+    if (bulkTrash) bulkTrash.addEventListener("click", function () {
+      var ids = vm.selectedIds();
+      if (!ids.length) return;
+      if (confirm("确认将 " + ids.length + " 个模型移入回收站？")) vm.trashModels(ids);
+    });
+
+    var restoreBtn = root.querySelector("#trashRestore");
+    if (restoreBtn) restoreBtn.addEventListener("click", function () {
+      var ids = vm.selectedIds();
+      if (ids.length) vm.restoreModels(ids);
+    });
+
+    var purgeBtn = root.querySelector("#trashPurge");
+    if (purgeBtn) purgeBtn.addEventListener("click", function () {
+      var ids = vm.selectedIds();
+      if (!ids.length) return;
+      if (confirm("彻底删除选中的 " + ids.length + " 个模型？此操作不可恢复！")) vm.purgeModels(ids);
+    });
+
+    var emptyBtn = root.querySelector("#trashEmpty");
+    if (emptyBtn) emptyBtn.addEventListener("click", function () {
+      if (confirm("清空回收站？将彻底删除全部 " + state.trash.length + " 个模型，不可恢复！")) vm.emptyTrash();
+    });
+
+    root.querySelectorAll("[data-restore-model]").forEach(function (btn) {
+      btn.addEventListener("click", function () { vm.restoreModels([btn.getAttribute("data-restore-model")]); });
+    });
+    root.querySelectorAll("[data-purge-model]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        if (confirm("彻底删除该模型？此操作不可恢复！")) vm.purgeModels([btn.getAttribute("data-purge-model")]);
+      });
+    });
+
+    // ---- 拖拽排序（顺序编辑模式）----
+    // 拖拽过程中只改 DOM，松手后一次性落盘：视图是 innerHTML 全量重绘，
+    // 中途写 state 会摧毁正在拖拽的节点。
+    var table = root.querySelector("#modelTable");
+    if (table && state.batchMode && state.reorderMode) {
+      var dragRow = null;
+      table.querySelectorAll("tbody tr[data-row-model]").forEach(function (tr) {
+        tr.addEventListener("dragstart", function (e) {
+          dragRow = tr;
+          tr.classList.add("dragging");
+          e.dataTransfer.effectAllowed = "move";
+          try { e.dataTransfer.setData("text/plain", tr.getAttribute("data-row-model")); } catch (err) {}
+        });
+        tr.addEventListener("dragover", function (e) {
+          if (!dragRow || dragRow === tr) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          var rect = tr.getBoundingClientRect();
+          var after = (e.clientY - rect.top) > rect.height / 2;
+          tr.parentNode.insertBefore(dragRow, after ? tr.nextSibling : tr);
+        });
+        tr.addEventListener("dragend", function () {
+          tr.classList.remove("dragging");
+          if (!dragRow) return;
+          dragRow = null;
+          var ids = [];
+          table.querySelectorAll("tbody tr[data-row-model]").forEach(function (r2) {
+            ids.push(r2.getAttribute("data-row-model"));
+          });
+          vm.setModelOrder(ids);
+        });
+      });
     }
   }
   vm.subscribe(paint);

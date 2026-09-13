@@ -79,6 +79,12 @@ const facade = {
     updateModel: (id, patch) => ipcRenderer.invoke("model:updateModel", id, patch),
     activateModel: (id, force) => ipcRenderer.invoke("model:activate", id, force),
     getActiveModel: () => ipcRenderer.invoke("model:active"),
+    listTrash: () => ipcRenderer.invoke("model:trashList"),
+    trashModels: (ids) => ipcRenderer.invoke("model:trash", ids),
+    restoreModels: (ids) => ipcRenderer.invoke("model:restore", ids),
+    purgeModels: (ids) => ipcRenderer.invoke("model:purge", ids),
+    emptyTrash: () => ipcRenderer.invoke("model:emptyTrash"),
+    setModelOrder: (order) => ipcRenderer.invoke("model:order", order),
   },
   window: {
     minimize: () => ipcRenderer.invoke("window:minimize"),

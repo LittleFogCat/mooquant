@@ -35,6 +35,14 @@ class ModelViewModel {
       },
       // Active model
       activeModelId: "",
+      // 列表视图 / 回收站视图切换
+      view: "models",
+      trash: [],
+      trashLoading: false,
+      // 批量管理：选中集合（map，照 backtest 的 compareSel 写法）
+      selected: {},
+      batchMode: false,
+      reorderMode: false,
       // Error
       error: null,
     };
@@ -75,7 +83,7 @@ class ModelViewModel {
   async loadAll() {
     await this.loadStatus();
     if (this.state.serviceReady) {
-      await Promise.all([this.loadModels(), this.loadActiveModel()]);
+      await Promise.all([this.loadModels(), this.loadActiveModel(), this.loadTrash()]);
     }
   }
 
@@ -164,15 +172,140 @@ class ModelViewModel {
   }
 
   async deleteModel(id) {
+    // 行内「删除」= 软删除（移入回收站），彻底删除只能在回收站里做
+    await this.trashModels([id]);
+  }
+
+  // ---- 视图切换 ----
+
+  setView(view) {
+    this._set({ view: view === "trash" ? "trash" : "models", selected: {} });
+    if (this.state.view === "trash") this.loadTrash();
+  }
+
+  // ---- 批量管理 ----
+
+  toggleBatchMode() {
+    const on = !this.state.batchMode;
+    this._set({ batchMode: on, reorderMode: on ? this.state.reorderMode : false, selected: {} });
+  }
+
+  toggleReorderMode() {
+    this._set({ reorderMode: !this.state.reorderMode });
+  }
+
+  toggleSelect(id) {
+    const sel = Object.assign({}, this.state.selected);
+    if (sel[id]) delete sel[id];
+    else sel[id] = true;
+    this._set({ selected: sel });
+  }
+
+  selectAll(models, checked) {
+    const sel = {};
+    if (checked) {
+      (models || []).forEach((m) => {
+        if (m.status !== "builtin") sel[m.model_id] = true; // 内置模型不可删除
+      });
+    }
+    this._set({ selected: sel });
+  }
+
+  clearSelection() { this._set({ selected: {} }); }
+
+  selectedIds() { return Object.keys(this.state.selected); }
+
+  // ---- 回收站 ----
+
+  async loadTrash() {
+    this._set({ trashLoading: true });
     try {
-      const r = await this.facade.modelServer.deleteModel(id);
+      const r = await this.facade.modelServer.listTrash();
+      this._set({ trash: r.ok ? (r.data || []) : [], trashLoading: false });
+    } catch (e) {
+      this._set({ trashLoading: false, error: e.message });
+    }
+  }
+
+  async trashModels(ids) {
+    const list = (ids || []).filter(Boolean);
+    if (!list.length) return;
+    try {
+      const r = await this.facade.modelServer.trashModels(list);
       if (r.ok) {
-        this.loadModels();
+        const skipped = (r.data && r.data.skipped) || [];
+        this._set({
+          selected: {},
+          error: skipped.length ? "已跳过 " + skipped.length + " 个内置模型（不可删除）" : null,
+        });
+        await this.loadModels();
+        await this.loadActiveModel();
+        await this.loadTrash();
       } else {
         this._set({ error: r.error });
       }
     } catch (e) {
       this._set({ error: e.message });
+    }
+  }
+
+  async restoreModels(ids) {
+    const list = (ids || []).filter(Boolean);
+    if (!list.length) return;
+    try {
+      const r = await this.facade.modelServer.restoreModels(list);
+      if (r.ok) {
+        this._set({ selected: {} });
+        await this.loadTrash();
+        await this.loadModels();
+      } else {
+        this._set({ error: r.error });
+      }
+    } catch (e) {
+      this._set({ error: e.message });
+    }
+  }
+
+  async purgeModels(ids) {
+    const list = (ids || []).filter(Boolean);
+    if (!list.length) return;
+    try {
+      const r = await this.facade.modelServer.purgeModels(list);
+      if (r.ok) {
+        this._set({ selected: {} });
+        await this.loadTrash();
+      } else {
+        this._set({ error: r.error });
+      }
+    } catch (e) {
+      this._set({ error: e.message });
+    }
+  }
+
+  async emptyTrash() {
+    try {
+      const r = await this.facade.modelServer.emptyTrash();
+      if (r.ok) {
+        this._set({ selected: {} });
+        await this.loadTrash();
+      } else {
+        this._set({ error: r.error });
+      }
+    } catch (e) {
+      this._set({ error: e.message });
+    }
+  }
+
+  async setModelOrder(order) {
+    try {
+      const r = await this.facade.modelServer.setModelOrder(order);
+      if (!r.ok) {
+        this._set({ error: r.error || "保存顺序失败" });
+        await this.loadModels(); // 回滚显示
+      }
+    } catch (e) {
+      this._set({ error: e.message });
+      await this.loadModels();
     }
   }
 

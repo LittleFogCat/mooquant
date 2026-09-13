@@ -107,13 +107,18 @@ _strategies_loaded = False
 def _ensure_loaded():
     global _strategies_loaded
     if not _strategies_loaded:
+        import time as _time
+        _t0 = _time.time()
         load_all()  # 含 ML 策略（registry 统一扫描 strategies/ml/builtin）
+        sys.stderr.write('[model-server] load_all 完成 %.2fs\n' % (_time.time() - _t0))
         # Import ML models so they register
         try:
             import strategies.ml.models  # noqa
+            sys.stderr.write('[model-server] ml.models 导入完成 %.2fs\n' % (_time.time() - _t0))
         except ImportError:
             pass  # torch not available, ML models skip
         ensure_builtin_models()
+        sys.stderr.write('[model-server] 内置模型就绪 %.2fs\n' % (_time.time() - _t0))
         _strategies_loaded = True
 
 
@@ -299,6 +304,8 @@ class ModelHandler(BaseHTTPRequestHandler):
                     self._send_json({'model_id': '', 'strategy': '', 'meta': None})
             else:
                 self._send_json({'model_id': '', 'strategy': '', 'meta': None})
+        elif path == '/trash':
+            self._send_json(ModelRegistry.list_trash())
         elif len(parts) == 2 and parts[0] == 'models':
             try:
                 meta = ModelRegistry.get_meta(parts[1])
@@ -391,6 +398,24 @@ class ModelHandler(BaseHTTPRequestHandler):
                 self._send_error(str(e), 409, 'DEGRADED')
             except Exception as e:
                 self._send_error(str(e), 500, 'INTERNAL')
+        elif path == '/trash':
+            # op: add（移入回收站）/ restore / purge（彻底删除）/ empty（清空）
+            body = self._read_body()
+            op = body.get('op', '')
+            ids = body.get('ids') or []
+            try:
+                if op == 'add':
+                    self._send_json(ModelRegistry.trash(ids))
+                elif op == 'restore':
+                    self._send_json(ModelRegistry.restore(ids))
+                elif op == 'purge':
+                    self._send_json(ModelRegistry.purge(ids))
+                elif op == 'empty':
+                    self._send_json(ModelRegistry.empty_trash())
+                else:
+                    self._send_error('Unknown trash op: ' + str(op))
+            except Exception as e:
+                self._send_error(str(e), 500, 'INTERNAL')
         else:
             self._send_error('Unknown endpoint', 404, 'NOT_FOUND')
 
@@ -399,7 +424,13 @@ class ModelHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         parts = [p for p in path.split('/') if p]
 
-        if len(parts) == 2 and parts[0] == 'models':
+        if path == '/order':
+            body = self._read_body()
+            try:
+                self._send_json(ModelRegistry.set_order(body.get('order') or []))
+            except Exception as e:
+                self._send_error(str(e), 500, 'INTERNAL')
+        elif len(parts) == 2 and parts[0] == 'models':
             model_id = parts[1]
             patch = self._read_body()
             try:
@@ -437,8 +468,21 @@ class ModelHandler(BaseHTTPRequestHandler):
 
 
 def run(port=18765):
+    import time as _time
+    _t0 = _time.time()
+    sys.stderr.write('[model-server] 启动中，先加载策略/模型再绑定端口...\n')
+    sys.stderr.flush()
     _ensure_loaded()
-    server = HTTPServer(('127.0.0.1', port), ModelHandler)
+    _t_bind = _time.time()
+    try:
+        server = HTTPServer(('127.0.0.1', port), ModelHandler)
+    except OSError as e:
+        # 端口被占（上次残留进程）等绑定失败：明确报错退出，别挂着
+        sys.stderr.write('[model-server] 端口绑定失败 127.0.0.1:%s: %s（可能已有实例在运行，elapsed=%.2fs）\n' % (port, e, _time.time() - _t0))
+        sys.stderr.flush()
+        raise
+    sys.stderr.write('[model-server] listening on 127.0.0.1:%s（加载耗时 %.2fs，绑端口 %.2fs）\n' % (port, _t_bind - _t0, _time.time() - _t_bind))
+    sys.stderr.flush()
     print('[model-server] listening on 127.0.0.1:' + str(port))
     server.serve_forever()
 

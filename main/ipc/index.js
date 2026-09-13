@@ -145,6 +145,12 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
     ipcMain.handle("model:updateModel", async (_e, id, patch) => { try { return await modelService.updateModel(id, patch); } catch (e) { return { ok: false, error: e.message }; } });
     ipcMain.handle("model:activate", async (_e, id, force) => { try { return await modelService.activateModel(id, !!force); } catch (e) { return { ok: false, error: e.message }; } });
     ipcMain.handle("model:active", async () => { try { return await modelService.getActiveModel(); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:trashList", async () => { try { return await modelService.listTrash(); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:trash", async (_e, ids) => { try { return await modelService.trashModels(ids); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:restore", async (_e, ids) => { try { return await modelService.restoreModels(ids); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:purge", async (_e, ids) => { try { return await modelService.purgeModels(ids); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:emptyTrash", async () => { try { return await modelService.emptyTrash(); } catch (e) { return { ok: false, error: e.message }; } });
+    ipcMain.handle("model:order", async (_e, order) => { try { return await modelService.setModelOrder(order); } catch (e) { return { ok: false, error: e.message }; } });
   }
 }
 module.exports = { registerIpc };

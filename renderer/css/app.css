@@ -103,6 +103,8 @@ tr.dragging{opacity:.45}
 .btn-danger{background:transparent;color:var(--red);border-color:var(--red)}
 .btn-danger:hover{background:var(--red);color:#fff}
 .btn-sm{padding:4px 10px;font-size:12px;border-radius:var(--radius-sm)}
+/* 不可用按钮：用 span 而非 disabled 以保留 title 提示 */
+.btn.is-disabled{opacity:.45;cursor:not-allowed}
 .form-group{margin-bottom:16px}
 .form-label{display:block;font-size:13px;font-weight:500;color:var(--text-2);margin-bottom:6px}
 .form-row{display:flex;gap:12px}
@@ -202,6 +204,8 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .data-table tr:hover td{background:var(--bg-1)}
 [data-theme="dark"] .data-table tr:hover td{background:var(--bg-3)}
 .data-table .num{font-variant-numeric:tabular-nums;text-align:right}
+/* 内置模型：贴在名称文字右上角的 built-in 角标（相对位移，不影响行高） */
+.badge-builtin{display:inline-block;position:relative;top:-6px;margin-left:5px;padding:1px 5px;border:1px solid rgba(255,255,255,.18);border-radius:4px;background:var(--navy);color:#fff;font-size:9px;line-height:1;letter-spacing:.03em;white-space:nowrap}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:16px}
 .stat-card{padding:16px;background:var(--glass-bg);border-radius:var(--radius-md);border:1px solid var(--border)}
 .stat-label{font-size:12px;color:var(--text-3);margin-bottom:4px}

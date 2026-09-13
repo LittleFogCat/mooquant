@@ -38,6 +38,8 @@ class ModelService {
     return new Promise((resolve, reject) => {
       const py = process.env.MOOKQUANT_PYTHON || this._options.python || "python";
       const script = path.join(__dirname, "..", "..", "bridge", "model_server.py");
+      const t0 = Date.now();
+      console.log(`[model-service] spawn 开始: ${py} ${script} port=${this._port}`);
 
       if (!fs.existsSync(script)) {
         return reject(new Error("model server script not found: " + script));
@@ -53,9 +55,11 @@ class ModelService {
       try {
         proc = spawn(py, [script], { stdio: ["pipe", "pipe", "pipe"], env });
       } catch (e) {
+        console.error(`[model-service] spawn 异常（${Date.now() - t0}ms）: ${e.message}`);
         return reject(new Error("failed to spawn python: " + e.message));
       }
       this._proc = proc;
+      console.log(`[model-service] spawn 成功 pid=${proc.pid}（${Date.now() - t0}ms），等待 /health...`);
 
       proc.stderr.on("data", (chunk) => {
         process.stderr.write("[model-server] " + chunk.toString());
@@ -66,36 +70,46 @@ class ModelService {
       });
 
       proc.on("error", (err) => {
+        console.error(`[model-service] 进程错误（${Date.now() - t0}ms）: ${err.message}`);
         if (!this._ready) reject(err);
         this._ready = false;
       });
 
       proc.on("exit", (code, signal) => {
-        process.stderr.write("[model-server] exited code=" + code + " signal=" + signal + "\n");
+        const msg = `[model-service] 进程退出 pid=${proc.pid} code=${code} signal=${signal} elapsed=${Date.now() - t0}ms ready=${this._ready}`;
+        if (!this._ready) {
+          // 启动阶段即退出：大概率端口被占 / python 报错，线索在上方 [model-server] stderr 输出
+          console.error(msg + "（启动阶段退出，请查看上方 [model-server] stderr）");
+          reject(new Error(`model server exited during startup code=${code} signal=${signal}`));
+        } else {
+          console.warn(msg);
+        }
         this._ready = false;
         this._proc = null;
       });
 
       // Poll /health until the server is ready
-      this._waitForReady(resolve, reject);
+      this._waitForReady(resolve, reject, t0);
     });
   }
 
-  _waitForReady(resolve, reject) {
+  _waitForReady(resolve, reject, t0) {
     let attempts = 0;
-    const maxAttempts = 30; // 30 * 200ms = 6s
+    const maxAttempts = 30; // 30 * 200ms = 6s（Python 冷启动导入 torch 可能较慢）
     const check = () => {
       this._httpGet("/health")
         .then(() => {
           this._ready = true;
-          console.log("[model-server] ready on port " + this._port);
+          console.log(`[model-service] ready！pid=${this._proc ? this._proc.pid : "?"} port=${this._port} 耗时 ${Date.now() - t0}ms（第 ${attempts + 1} 次探测）`);
           resolve();
         })
-        .catch(() => {
+        .catch((e) => {
           attempts++;
           if (attempts >= maxAttempts) {
+            console.error(`[model-service] /health 探测超时：${maxAttempts}×200ms 均失败（最后错误: ${e.message}），总耗时 ${Date.now() - t0}ms`);
             reject(new Error("model server startup timeout"));
           } else {
+            if (attempts % 5 === 0) console.log(`[model-service] /health 未就绪 ${attempts}/${maxAttempts}（${Date.now() - t0}ms）...`);
             setTimeout(check, 200);
           }
         });
@@ -221,6 +235,25 @@ class ModelService {
   }
   async updateModel(id, patch) {
     return { ok: true, data: await this._httpPut("/models/" + encodeURIComponent(id), patch) };
+  }
+
+  // ---- 回收站（软删除）：目录移入 data/models/.trash ----
+
+  async listTrash() {
+    return { ok: true, data: await this._httpGet("/trash") };
+  }
+
+  async _trashOp(op, ids) {
+    return { ok: true, data: await this._httpPost("/trash", { op, ids: ids || [] }) };
+  }
+
+  async trashModels(ids) { return this._trashOp("add", ids); }
+  async restoreModels(ids) { return this._trashOp("restore", ids); }
+  async purgeModels(ids) { return this._trashOp("purge", ids); }
+  async emptyTrash() { return this._trashOp("empty", []); }
+
+  async setModelOrder(order) {
+    return { ok: true, data: await this._httpPut("/order", { order: order || [] }) };
   }
 
   async activateModel(id, force = false) {

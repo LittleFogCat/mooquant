@@ -62,6 +62,9 @@
 | PUT | /models/{id} | 更新模型元数据（名称等） |
 | GET | /models/active | 获取当前激活的模型 |
 | POST | /models/{id}/activate | 激活模型 |
+| GET | /trash | 列出回收站中的模型（含 `deleted_at`） |
+| POST | /trash | 回收站操作，body `{op, ids}`：`add`（软删除）/`restore`/`purge`（彻底删除）/`empty`（清空） |
+| PUT | /order | 保存模型列表显示顺序，body `{order: [model_id, ...]}` |
 | POST | /train | 启动训练（异步） |
 | GET | /train/{id}/status | 查询训练状态 |
 | POST | /signal | 计算策略信号（不传 strategy 时自动用激活模型） |
@@ -215,6 +218,8 @@ ev = P(up) × up_return − P(down) × down_return − roundtrip_cost
 - 存储路径：`data/models/{model_id}/`
 - 文件：`model.pt`（权重）+ `meta.json`（元数据）+ `config.json`（训练配置）
 - 索引：`data/models/index.json`
+- 显示顺序：`data/models/order.json`（`{order: [model_id, ...]}`，不存在时保持文件系统顺序，新模型追加在末尾）
+- 回收站：`data/models/.trash/{model_id}/`（软删除后的目录 + `.trash_meta.json` 记 `deleted_at`）
 - 缓存：LRU 缓存（最多 10 个模型在内存中）
 - 线程安全：`threading.Lock`
 
@@ -250,6 +255,19 @@ ev = P(up) × up_return − P(down) × down_return − roundtrip_cost
 - `MLStrategyBase.on_after_init` 无显式 model_id 时自动读取激活模型
 - `/signal` 端点和 stdio RPC `strategy.signal` 均通过 MLStrategyBase 统一处理
 - 上层（QMT 壳 / 本地策略执行器）无需关心 model_id，激活即可用
+
+## 模型回收站与批量管理（v0.1.31）
+
+模型删除是**软删除**：`ModelRegistry.trash()` 把 `data/models/{id}/` 整个目录 `rename` 到 `data/models/.trash/{id}/`，并写入 `.trash_meta.json`（记 `deleted_at`）。只有回收站里的 `purge()` / `empty_trash()` 才真正 `rmtree`。
+
+- **为什么用目录移动而不是 `status` 标记**：`_update_index()` 的扫描条件是 `MODEL_DIR/<name>/meta.json` 存在，而 `.trash/meta.json` 不存在，因此回收站目录**天然被索引扫描跳过**——既有的扫描/索引逻辑零改动。恢复只是再 `rename` 回来，原 `meta.json` / `config.json` / 权重完全保留（删除时间放 sidecar，不污染原 meta）。
+- **内置模型不可删除**：`trash()` 检查 `meta.status == 'builtin'` 并跳过，返回 `skipped: [{model_id, reason: 'builtin'}]`。因此内置模型永远不会进 `.trash`，`ensure_builtin_models()` 的「meta.json 不存在就重建」逻辑也不会与回收站产生"重启后复活"的冲突。
+- **被删的模型若正激活**：`trash()` 发现 `active.json` 指向被删模型时清空 `active.json`，避免悬空指针。
+- **批量操作**：统一走 `POST /trash`，body `{op, ids}`（`op` ∈ `add`/`restore`/`purge`/`empty`），返回 `{trashed|restored|purged, skipped}`。
+- **列表显示顺序**：`data/models/order.json` 是唯一持久化真源。`_update_index()` 生成索引后调 `_apply_order()` 按其排序；未列入 `order.json` 的模型追加在末尾（保持原有相对顺序），因此新训练的模型默认出现在列表末尾。**顺序仅影响列表显示**，不影响激活、回测、信号计算。
+- **路由前缀**：回收站与排序用独立前缀 `/trash`、`/order`，刻意避开 `/models/{id}`——`do_GET`/`do_PUT` 里已有 `len(parts) == 2 and parts[0] == 'models'` 分支，`/models/trash` 会被误判成 `get_meta('trash')` / `update_meta('trash')`。
+
+> `DELETE /models/{id}`（物理删除）路由仍保留，但 UI 已不再调用——行内「删除」按钮现在走软删除。
 
 ## 策略执行器集成
 
@@ -293,8 +311,14 @@ executor tick -> 获取K线 -> modelService.computeSignal() -> HTTP /signal -> �
 | model:models | 列出模型 |
 | model:train | 启动训练 |
 | model:trainStatus | 查询训练状态 |
-| model:deleteModel | 删除模型 |
+| model:deleteModel | 删除模型（行内删除，现为软删除→回收站） |
 | model:signal | 计算信号 |
+| model:trashList | 列出回收站中的模型 |
+| model:trash | 批量移入回收站 |
+| model:restore | 批量恢复到模型列表 |
+| model:purge | 批量彻底删除（不可恢复） |
+| model:emptyTrash | 清空回收站 |
+| model:order | 保存模型列表显示顺序 |
 
 ### Preload
 
@@ -305,7 +329,11 @@ executor tick -> 获取K线 -> modelService.computeSignal() -> HTTP /signal -> �
 ### 模型管理页（renderer/js/views/model-view.js）
 
 - 服务状态卡片（状态灯 + 端口 + 刷新）
-- 模型列表表格（名称/架构/创建时间/标的/状态/操作）
+- 模型列表表格（名称/架构/体检/创建时间/操作）；内置模型名称右上角带藏蓝色 `built-in` 角标，其删除按钮置灰（`<span class="btn is-disabled">`，保留 title 提示「内置模型不可删除」——用 span 而非 `disabled` 属性，否则浏览器不弹原生 tooltip）
+- **视图切换（卡片标题栏）**：`模型列表` / `回收站 (N)` 在同一张卡片内切换内容
+- **批量管理**：进入后表头出现全选复选框、行首出现选择框，卡片内出现批量条（已选 N 项 / 顺序编辑 / 清空选择 / 移入回收站）；全选会跳过内置模型
+- **顺序编辑（拖拽排序）**：批量条内的开关，开启后行首出现拖拽手柄（`.drag-handle`），按住行上下拖动改顺序。拖拽过程**只改 DOM**（`dragover` 用 `insertBefore` 实时换位），松手时一次性把新顺序写盘（`PUT /order`）——因为视图是 `innerHTML` 全量重绘，中途写 state 会摧毁正在拖拽的节点。成功后不重绘（DOM 已是新顺序），失败则 `loadModels()` 回滚
+- **回收站视图**：列 名称/架构/删除时间/操作（恢复·彻底删除），批量条为 已选 N 项 / 恢复 / 彻底删除 / 清空回收站；所有彻底删除类操作带 `confirm` 二次确认
 - 训练表单（标的/周期/训练范围/数据量/起止日期/架构/超参数/标签类型）
   - **标的输入复用 `StockSearch` 多选模式**（`renderer/js/views/stock-search.js`）：与回测页/策略启动一致，输入代码/名称/拼音联想下拉，选中即以 `, ` 追加为逗号分隔的多标的标签式输入，支持删除重选
   - **训练范围（rangeMode）**：`count` 按数量取最近 N 根K线 / `date` 按起止日期区间取数（对齐多标的时间窗）。切到 `date` 模式时隐藏数据量、显示起止日期；ViewModel 校验起止日期必填且 start ≤ end，随训练请求传 `start_date`/`end_date`
