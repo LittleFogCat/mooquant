@@ -6,6 +6,7 @@
  * 参数表单根据 params_schema 自动生成（替代裸 JSON 编辑）。
  */
 import * as StockSearch from './stock-search.js';
+import { escapeHtml } from '../utils/format.js';
 
 const TYPE_LABELS = {
     shell: "壳策略",
@@ -14,6 +15,8 @@ const TYPE_LABELS = {
     mean_reversion: "均值回归",
     custom: "自定义",
   };
+
+  const STATUS_LABELS = { draft: "草稿", active: "启用", archived: "归档" };
 
   /** 风控参数 schema（固定结构，表单化渲染） */
   const RISK_SCHEMA = [
@@ -59,12 +62,6 @@ class MyStrategy(StrategyBase):
         return None
 `;
 
-  function escapeHtml(s) {
-    return String(s == null ? "" : s).replace(/[&<>"'\/]/g, (c) => ({
-      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "/": "&#x2F;",
-    }[c]));
-  }
-
   /** 获取模型展示名：优先 name，unnamed 时 fallback 到 arch+日期，最后 model_id */
   function modelDisplayName(am) {
     if (!am) return "";
@@ -95,7 +92,7 @@ class MyStrategy(StrategyBase):
       .join("");
     const footer = models.length ? "" : '<div style="font-size:11px;color:var(--text-3);margin-top:-6px;margin-bottom:8px">暂无可用模型，请先在模型管理页训练</div>';
     return '<div class="form-group"><label class="form-label">绑定模型</label>' +
-      '<select class="input-field" id="st_model">' + opts + "</select></div>" + footer;
+      '<select class="form-input" id="st_model">' + opts + "</select></div>" + footer;
   }
 
   /** 从 state.strategyTypes 取展示名，fallback 到 TYPE_LABELS */
@@ -139,7 +136,7 @@ class MyStrategy(StrategyBase):
 
     if (!schema.length) {
       return modelSelect + mlHint + '<div class="form-group"><label class="form-label">策略参数 (JSON)</label>' +
-        '<textarea class="input-field" id="st_params" style="font-family:monospace;font-size:13px;min-height:80px">' + escapeHtml(currentParamsStr) + '</textarea></div>';
+        '<textarea class="form-input" id="st_params" style="font-family:monospace;font-size:13px;min-height:80px">' + escapeHtml(currentParamsStr) + '</textarea></div>';
     }
 
     const fields = schema.map((p) => {
@@ -150,17 +147,17 @@ class MyStrategy(StrategyBase):
       if (p.type === "int" || p.type === "float") {
         const step = p.type === "float" ? "0.01" : "1";
         return '<div class="form-group"><label class="form-label">' + label + rangeHint + '</label>' +
-          '<input class="input-field" id="st_param_' + escapeHtml(p.key) + '" type="number" step="' + step +
+          '<input class="form-input" id="st_param_' + escapeHtml(p.key) + '" type="number" step="' + step +
           '" value="' + val + '"' + (p.min != null ? ' min="' + p.min + '"' : "") +
           (p.max != null ? ' max="' + p.max + '"' : "") + " /></div>" + (p.description ? '<div style="font-size:11px;color:var(--text-3);margin-top:-6px;margin-bottom:8px">' + escapeHtml(p.description) + '</div>' : '');
       }
       if (p.type === "bool") {
         return '<div class="form-group"><label class="form-label">' + label + "</label>" +
-          '<select class="input-field" id="st_param_' + escapeHtml(p.key) + '"><option value="true" ' +
+          '<select class="form-input" id="st_param_' + escapeHtml(p.key) + '"><option value="true" ' +
           (val ? "selected" : "") + '>是</option><option value="false" ' + (!val ? "selected" : "") + ">否</option></select></div>" + (p.description ? '<div style="font-size:11px;color:var(--text-3);margin-top:-6px;margin-bottom:8px">' + escapeHtml(p.description) + '</div>' : '');
       }
       return '<div class="form-group"><label class="form-label">' + label + '</label>' +
-        '<input class="input-field" id="st_param_' + escapeHtml(p.key) + '" type="text" value="' + escapeHtml(String(val)) + '" /></div>' + (p.description ? '<div style="font-size:11px;color:var(--text-3);margin-top:-6px;margin-bottom:8px">' + escapeHtml(p.description) + '</div>' : '');
+        '<input class="form-input" id="st_param_' + escapeHtml(p.key) + '" type="text" value="' + escapeHtml(String(val)) + '" /></div>' + (p.description ? '<div style="font-size:11px;color:var(--text-3);margin-top:-6px;margin-bottom:8px">' + escapeHtml(p.description) + '</div>' : '');
     }).join("");
 
     return modelSelect + mlHint + '<div class="form-group"><label class="form-label">策略参数</label></div>' + fields +
@@ -176,7 +173,7 @@ class MyStrategy(StrategyBase):
       var step = p.step || (p.type === "float" ? "0.01" : "1");
       var hint = p.hint ? '<div style="font-size:11px;color:var(--text-3);margin-top:-6px;margin-bottom:8px">' + escapeHtml(p.hint) + '</div>' : '';
       return '<div class="form-group"><label class="form-label">' + escapeHtml(p.label) + '</label>' +
-        '<input class="input-field" id="st_risk_' + escapeHtml(p.key) + '" type="number" step="' + step +
+        '<input class="form-input" id="st_risk_' + escapeHtml(p.key) + '" type="number" step="' + step +
         '" value="' + val + '"' + (p.min != null ? ' min="' + p.min + '"' : '') +
         (p.max != null ? ' max="' + p.max + '"' : '') + ' /></div>' + hint;
     }).join("");
@@ -186,10 +183,10 @@ class MyStrategy(StrategyBase):
 
   function renderList(state, vm) {
     if (state.loading && !state.list.length) {
-      return '<div class="empty-state"><div class="empty-state-icon">⏳</div><div class="empty-state-text">加载中...</div></div>';
+      return '<div class="empty-state"><div class="empty-state-text">加载中...</div></div>';
     }
     if (!state.list.length) {
-      return '<div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">还没有策略，点击「新建策略」开始</div></div>';
+      return '<div class="empty-state"><div class="empty-state-text">还没有策略，点击「新建策略」开始</div></div>';
     }
     const rows = state.list.map((s) => {
       const exec = state.executorStatus[s.id];
@@ -198,9 +195,9 @@ class MyStrategy(StrategyBase):
         ? '<span class="badge badge-running">运行中</span>'
         : exec && exec.status === "error"
         ? '<span class="badge badge-error">异常</span>'
-        : '<span class="badge badge-' + escapeHtml(s.status) + '">' + escapeHtml(s.status) + "</span>";
+        : '<span class="badge badge-' + escapeHtml(s.status) + '">' + escapeHtml(STATUS_LABELS[s.status] || s.status) + "</span>";
       const runInfo = exec
-        ? '<div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">' +
+        ? '<div style="font-size:11px;color:var(--text-3);margin-top:2px">' +
           (exec.lastSignal ? exec.lastSignal.action + " (" + exec.lastSignal.reason + ")" : "无信号") +
           " · tick#" + (exec.tickCount || 0) +
           (exec.error ? " · ⚠ " + escapeHtml(exec.error) : "") +
@@ -259,37 +256,37 @@ class MyStrategy(StrategyBase):
     // 参数表单（已有类型）或自定义策略代码编辑区
     const paramsHtml = isCustom
       ? '<div class="form-group"><label class="form-label">策略类型名（英文标识符，如 my_macd）</label>' +
-          '<input class="input-field" id="st_custom_name" value="' + escapeHtml(e.customName) + '" placeholder="my_strategy" /></div>' +
+          '<input class="form-input" id="st_custom_name" value="' + escapeHtml(e.customName) + '" placeholder="my_strategy" /></div>' +
         '<div class="form-group"><label class="form-label">策略代码（Python，须含 StrategyBase 子类，类属性 name 须与类型名一致）</label>' +
-          '<textarea class="input-field" id="st_custom_code" style="font-family:monospace;font-size:12px;min-height:320px;white-space:pre;resize:vertical">' + escapeHtml(e.customCode || STRATEGY_TEMPLATE) + '</textarea></div>' +
-        '<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:12px">保存后将自动注册为新的策略类型，之后可在「类型」下拉中选用并调参。</div>'
+          '<textarea class="form-input" id="st_custom_code" style="font-family:monospace;font-size:12px;min-height:320px;white-space:pre;resize:vertical">' + escapeHtml(e.customCode || STRATEGY_TEMPLATE) + '</textarea></div>' +
+        '<div style="font-size:11px;color:var(--text-3);margin-bottom:12px">保存后将自动注册为新的策略类型，之后可在「类型」下拉中选用并调参。</div>'
       : renderParamsForm(state, e.params);
 
     return '<div class="modal-overlay" id="strategyModal">' +
       '<div class="modal">' +
         '<h2 class="modal-title">' + (e.id ? "编辑策略" : "新建策略") + '</h2>' +
-        (state.error ? '<div class="status error" style="margin-bottom:16px">' + escapeHtml(state.error) + '</div>' : '') +
+        (state.error ? '<div class="status error" style="margin-bottom:16px"><span>' + escapeHtml(state.error) + '</span><button class="status-dismiss" data-dismiss-error>&times;</button></div>' : '') +
         '<div class="form-group"><label class="form-label">策略名称</label>' +
-          '<input class="input-field" id="st_name" value="' + escapeHtml(e.name) + '" placeholder="如：双均线策略" /></div>' +
+          '<input class="form-input" id="st_name" value="' + escapeHtml(e.name) + '" placeholder="如：双均线策略" /></div>' +
         '<div class="form-row">' +
           '<div class="form-group"><label class="form-label">类型</label>' +
-            '<select class="input-field" id="st_type">' + typeOptions + '</select></div>' +
+            '<select class="form-input" id="st_type">' + typeOptions + '</select></div>' +
           '<div class="form-group"><label class="form-label">状态</label>' +
-            '<select class="input-field" id="st_status">' +
+            '<select class="form-input" id="st_status">' +
               '<option value="draft" ' + (e.status === "draft" ? "selected" : "") + '>草稿</option>' +
               '<option value="active" ' + (e.status === "active" ? "selected" : "") + '>启用</option>' +
               '<option value="archived" ' + (e.status === "archived" ? "selected" : "") + '>归档</option>' +
             '</select></div>' +
         '</div>' +
         '<div class="form-group"><label class="form-label">描述</label>' +
-          '<textarea class="input-field" id="st_desc" placeholder="策略描述...">' + escapeHtml(e.description) + '</textarea></div>' +
+          '<textarea class="form-input" id="st_desc" placeholder="策略描述...">' + escapeHtml(e.description) + '</textarea></div>' +
         paramsHtml +
         renderRiskForm(e.risk) +
         (isCustom ? '' :
           '<details class="form-group" style="margin-top:12px"><summary class="form-label" style="cursor:pointer">策略源码（可直接编辑）</summary>' +
-          '<textarea class="input-field" id="st_code" style="font-family:monospace;font-size:12px;min-height:280px;white-space:pre;resize:vertical;margin-top:8px" placeholder="加载中...">' + escapeHtml(e.code || '') + '</textarea>' +
+          '<textarea class="form-input" id="st_code" style="font-family:monospace;font-size:12px;min-height:280px;white-space:pre;resize:vertical;margin-top:8px" placeholder="加载中...">' + escapeHtml(e.code || '') + '</textarea>' +
           '<input type="hidden" id="st_original_code" value="' + escapeHtml(e.originalCode || '') + '" />' +
-          '<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">修改源码后保存将更新策略类型，不影响已有实例。</div>' +
+          '<div style="font-size:11px;color:var(--text-3);margin-top:4px">修改源码后保存将更新策略类型，不影响已有实例。</div>' +
           '</details>') +
         '<div class="modal-actions">' +
           '<button class="btn btn-secondary" data-action="cancel">取消</button>' +
@@ -305,10 +302,10 @@ class MyStrategy(StrategyBase):
     return '<div class="modal-overlay" id="exportModal">' +
       '<div class="modal" style="max-width:760px">' +
         '<h2 class="modal-title">导出 QMT 脚本 · ' + escapeHtml(state.exportedName || "") + '</h2>' +
-        '<div style="font-size:12px;color:var(--text-tertiary);margin-bottom:8px">' +
+        '<div style="font-size:12px;color:var(--text-3);margin-bottom:8px">' +
           '复制以下脚本，粘贴到 QMT 客户端「模型研究」新建模型即可运行。策略逻辑与框架内回测/实盘完全一致。' +
         '</div>' +
-        '<textarea class="input-field" id="export_script" style="font-family:monospace;font-size:12px;min-height:380px;white-space:pre;resize:vertical" readonly>' + escapeHtml(state.exportedScript) + '</textarea>' +
+        '<textarea class="form-input" id="export_script" style="font-family:monospace;font-size:12px;min-height:380px;white-space:pre;resize:vertical" readonly>' + escapeHtml(state.exportedScript) + '</textarea>' +
         '<div class="modal-actions">' +
           '<button class="btn btn-secondary" data-action="copy-export">复制到剪贴板</button>' +
           '<button class="btn btn-primary" data-action="close-export">关闭</button>' +
@@ -328,7 +325,7 @@ class MyStrategy(StrategyBase):
             '<input class="search-input" id="st_start_symbols" type="text" placeholder="输入代码/名称/拼音搜索，如：sh600036 / 茂台 / gzmt" autocomplete="off" spellcheck="false" value="' + escapeHtml(state.startingSymbols || "") + '" />' +
           '</div>' +
         '</div>' +
-        '<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:12px">搜索选择股票，多个标的用逗号分隔</div>' +
+        '<div style="font-size:11px;color:var(--text-3);margin-bottom:12px">搜索选择股票，多个标的用逗号分隔</div>' +
         '<div class="modal-actions">' +
           '<button class="btn btn-secondary" data-action="cancel-start">取消</button>' +
           '<button class="btn btn-primary" data-action="confirm-start">启动</button>' +
@@ -408,11 +405,18 @@ class MyStrategy(StrategyBase):
       // DOM 重建前销毁旧的搜索组件
       if (startSearchCtrl) { startSearchCtrl.destroy(); startSearchCtrl = null; }
 
-      const header = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
-        '<h2 style="margin:0">策略管理</h2>' +
-        '<button class="btn btn-primary" data-action="create">+ 新建策略</button>' +
-      '</div>';
-      root.innerHTML = header + renderList(state, vm) + renderModal(state) + renderExportModal(state) + renderStartModal(state);
+      root.innerHTML = renderList(state, vm) + renderModal(state) + renderExportModal(state) + renderStartModal(state);
+
+      const actionsSlot = document.getElementById("strategyHeaderActions");
+      if (actionsSlot) {
+        actionsSlot.innerHTML = '<button class="btn btn-primary" id="st_create">+ 新建策略</button>';
+        const createBtn = actionsSlot.querySelector("#st_create");
+        if (createBtn) createBtn.addEventListener("click", () => vm.startCreate());
+      }
+
+      root.querySelectorAll("[data-dismiss-error]").forEach((el) => {
+        el.addEventListener("click", () => vm.dismissError && vm.dismissError());
+      });
 
       root.querySelectorAll("[data-action]").forEach((el) => {
         el.addEventListener("click", () => {

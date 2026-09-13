@@ -38,6 +38,10 @@ class QuoteViewModel {
     for (const fn of this._subs) fn(this.state);
   }
 
+  dismissError() {
+    this._set({ error: null });
+  }
+
   setSymbol(symbol) {
     this._set({ symbol, invalid: false, error: null });
   }

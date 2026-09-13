@@ -1,11 +1,9 @@
-function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;","/":"&#x2F;" }[c])); }
-  function fmt(n, d) { d = d || 2; if (n == null || isNaN(n)) return "-"; return Number(n).toLocaleString("zh-CN", { minimumFractionDigits: d, maximumFractionDigits: d }); }
-  function cls(n) { if (n > 0) return "up"; if (n < 0) return "down"; return "flat"; }
+import { escapeHtml as esc, fmtNum as fmt, cls } from '../utils/format.js';
 
   function render(root, vm, quoteVM) {
     function paint(state) {
       if (!state.items.length) {
-        root.innerHTML = `<div class="empty-state" style="padding:24px"><div class="empty-state-icon">⭐</div><div class="empty-state-text">还没有自选股，查询后点击“加入自选”</div></div>`;
+        root.innerHTML = `<div class="empty-state" style="padding:24px"><div class="empty-state-text">还没有自选股，查询后点击「加入自选」</div></div>`;
         return;
       }
       const rows = state.items.map(item => `

@@ -1,10 +1,5 @@
 import { getInitials } from '../utils/pinyin.js';
-
-function escapeHtml(s) {
-    return String(s == null ? "" : s).replace(/[&<>"'\/]/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "/": "&#x2F;" }[c];
-    });
-  }
+import { escapeHtml } from '../utils/format.js';
 
   // ----------------------------------------------------------------------
   // LRU 缓存（全局共享，localStorage 持久化）

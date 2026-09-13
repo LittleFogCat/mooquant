@@ -1,42 +1,8 @@
 import * as echarts from 'echarts';
+import { fmtPrice, fmtVol, fmtNum } from '../utils/format.js';
+import { getThemeColors } from '../utils/chart-theme.js';
 
 // ---- 工具函数 ----
-  function fmtPrice(v) {
-    if (v == null || isNaN(v)) return "-";
-    return v < 10 ? Number(v).toFixed(3) : Number(v).toFixed(2);
-  }
-  function fmtVol(v) {
-    if (v == null || isNaN(v)) return "-";
-    if (v >= 1e8) return (v / 1e8).toFixed(2) + "亿";
-    if (v >= 1e4) return (v / 1e4).toFixed(2) + "万";
-    return String(v);
-  }
-  function fmtNum(n, d) {
-    d = d || 2;
-    if (n == null || isNaN(n)) return "-";
-    return Number(n).toLocaleString("zh-CN", { minimumFractionDigits: d, maximumFractionDigits: d });
-  }
-
-  /** Read CSS variables for ECharts (Canvas-rendered, cannot use var() directly) */
-  function getThemeColors() {
-    var s = getComputedStyle(document.documentElement);
-    var isDark = document.documentElement.getAttribute("data-theme") === "dark";
-    function v(name, fallback) { var val = s.getPropertyValue(name).trim(); return val || fallback; }
-    return {
-      bg: v("--bg-0", isDark ? "#212121" : "#ffffff"),
-      text1: v("--text-1", isDark ? "#ececec" : "#0d0d0d"),
-      text2: v("--text-2", isDark ? "#b4b4b4" : "#5d5d5d"),
-      text3: v("--text-3", "#8e8e8e"),
-      border: v("--border", isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"),
-      accent: v("--accent", isDark ? "#ececec" : "#0d0d0d"),
-      isDark: isDark,
-      gridLine: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)",
-      axisLine: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
-      axisLabel: isDark ? "#8e8e8e" : "#8e8e8e",
-      zoomBg: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.03)",
-      zoomFiller: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
-    };
-  }
   function toDate(b) {
     if (b.date) return b.date;
     if (b.time) {
@@ -109,7 +75,7 @@ import * as echarts from 'echarts';
     var periodSel = null;
     if (state.periods && state.periods.length) {
       periodSel = document.createElement("select");
-      periodSel.className = "input-field";
+      periodSel.className = "form-input";
       periodSel.style.cssText = "width:auto;height:28px;font-size:12px;padding:0 6px;flex-shrink:0;";
       periodSel.innerHTML = state.periods.map(function (p) {
         return '<option value="' + p.value + '"' + (p.value === state.period ? " selected" : "") + ">" + p.label + "</option>";
@@ -250,7 +216,7 @@ import * as echarts from 'echarts';
           var hasBuy = ts.some(function (t) { return t.side === "buy"; });
           var hasSell = ts.some(function (t) { return t.side === "sell"; });
           var both = hasBuy && hasSell;
-          var labelColor = both ? "#f59e0b" : (hasBuy ? "#ef4444" : "#3b82f6");
+          var labelColor = both ? tc.orange : (hasBuy ? tc.red : tc.green);
           // label below low for buy/both, above high for sell-only
           var offset = Math.max((hi - lo) * 0.5, lo * 0.012);
           var labelY = (hasSell && !hasBuy) ? hi + offset : lo - offset;
@@ -287,15 +253,15 @@ import * as echarts from 'echarts';
         series.push({
           name: "收盘价", type: "line", data: closePrices, symbol: "none",
           lineStyle: { color: tc.accent, width: 1.5 },
-          areaStyle: { color: tc.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)" },
+          areaStyle: { color: tc.areaFill },
         });
       } else {
         // 蜡烛图模式
         series.push({
           name: "K线", type: "candlestick", data: ohlc,
           itemStyle: {
-            color: "transparent", color0: "#22c55e",
-            borderColor: "#ef4444", borderColor0: "#22c55e",
+            color: "transparent", color0: tc.green,
+            borderColor: tc.red, borderColor0: tc.green,
             borderWidth: 1
           },
           markLine: showTrades ? { symbol: "none", silent: true, lineStyle: { type: "dashed", width: 1 }, data: markLineData } : undefined,
@@ -303,29 +269,29 @@ import * as echarts from 'echarts';
         // B dots
         series.push({
           name: "B", type: "scatter", data: showTrades ? buyDots : [], symbol: "circle", symbolSize: 6,
-          itemStyle: { color: "#ef4444" }, z: 10,
+          itemStyle: { color: tc.red }, z: 10,
         });
         // S dots
         series.push({
           name: "S", type: "scatter", data: showTrades ? sellDots : [], symbol: "circle", symbolSize: 6,
-          itemStyle: { color: "#3b82f6" }, z: 10,
+          itemStyle: { color: tc.green }, z: 10,
         });
         // B labels
         series.push({
           name: "B标签", type: "scatter", data: showTrades ? buyLabels : [], symbol: "circle", symbolSize: 0,
-          label: { show: true, formatter: "B", color: "#fff", backgroundColor: "#ef4444", borderRadius: 3, padding: [1, 3], fontSize: 9, offset: [0, 14] },
+          label: { show: true, formatter: "B", color: "#fff", backgroundColor: tc.red, borderRadius: 3, padding: [1, 3], fontSize: 10, offset: [0, 14] },
           z: 11, silent: true,
         });
         // S labels
         series.push({
           name: "S标签", type: "scatter", data: showTrades ? sellLabels : [], symbol: "circle", symbolSize: 0,
-          label: { show: true, formatter: "S", color: "#fff", backgroundColor: "#3b82f6", borderRadius: 3, padding: [1, 3], fontSize: 9, offset: [0, -14] },
+          label: { show: true, formatter: "S", color: "#fff", backgroundColor: tc.green, borderRadius: 3, padding: [1, 3], fontSize: 10, offset: [0, -14] },
           z: 11, silent: true,
         });
         // T labels (buy + sell on the same bar)
         series.push({
           name: "T标签", type: "scatter", data: showTrades ? tLabels : [], symbol: "circle", symbolSize: 0,
-          label: { show: true, formatter: "T", color: "#fff", backgroundColor: "#f59e0b", borderRadius: 3, padding: [1, 3], fontSize: 9, offset: [0, 14] },
+          label: { show: true, formatter: "T", color: "#fff", backgroundColor: tc.orange, borderRadius: 3, padding: [1, 3], fontSize: 10, offset: [0, 14] },
           z: 11, silent: true,
         });
       }
@@ -351,7 +317,7 @@ import * as echarts from 'echarts';
               var close = closePrices[idx];
               var prevClose = idx > 0 ? closePrices[idx - 1] : null;
               var pct = prevClose != null && prevClose !== 0 ? (close - prevClose) / prevClose * 100 : null;
-              var color = pct != null && pct >= 0 ? "#ef4444" : "#22c55e";
+              var color = pct != null && pct >= 0 ? tc.red : tc.green;
               lines.push("收盘: " + fmtPrice(close));
               if (pct != null) lines.push('<span style="color:' + color + '">涨幅: ' + (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%</span>");
               lines.push("成交量: " + fmtVol(volumes[idx]));
@@ -370,7 +336,7 @@ import * as echarts from 'echarts';
             if (p.seriesType === "candlestick" && p.dataIndex != null && ohlc[p.dataIndex] && !candleDone) {
               var d = ohlc[p.dataIndex];
               var open = d[0], close = d[1], low = d[2], high = d[3];
-              var color = close >= open ? "#ef4444" : "#22c55e";
+              var color = close >= open ? tc.red : tc.green;
               var prevClose = (p.dataIndex > 0 && ohlc[p.dataIndex - 1]) ? ohlc[p.dataIndex - 1][1] : null;
               var change = prevClose != null ? close - prevClose : null;
               var pct = (prevClose != null && prevClose !== 0) ? (close - prevClose) / prevClose * 100 : null;
@@ -386,7 +352,7 @@ import * as echarts from 'echarts';
               var info = p.data.info;
               var isBuy = info.side === "buy";
               var label = isBuy ? "买入" : "卖出";
-              var c = isBuy ? "#ef4444" : "#3b82f6";
+              var c = isBuy ? tc.red : tc.green;
               lines.push('<span style="color:' + c + '">' + label + ": " + fmtNum(info.price) + "  股数: " + info.quantity + "</span>");
               if (info.pnl != null) lines.push('<span style="color:' + c + '">盈亏: ' + fmtNum(info.pnl) + "</span>");
             }

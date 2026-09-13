@@ -107,6 +107,10 @@ class BacktestViewModel {
     for (const fn of this._subs) fn(this.state);
   }
 
+  dismissError() {
+    this._set({ error: null });
+  }
+
   async loadStrategies() {
     try {
       const resp = await this.facade.strategy.list();

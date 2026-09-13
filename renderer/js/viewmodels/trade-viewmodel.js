@@ -39,6 +39,10 @@ class TradeViewModel {
     for (const fn of this._subs) fn(this.state);
   }
 
+  dismissError() {
+    this._set({ error: null });
+  }
+
   async loadAll() {
     this._set({ loading: true, error: null });
     try {

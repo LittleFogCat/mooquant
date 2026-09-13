@@ -1,4 +1,5 @@
-function escapeHtml(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;","/":"&#x2F;" }[c])); }
+import { escapeHtml } from '../utils/format.js';
+
   function render(root, vm) {
     function paint(state) {
       root.innerHTML = `
@@ -47,7 +48,7 @@ function escapeHtml(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, 
         <div class="card">
           <div class="card-title">说明</div>
           <ul style="padding-left:20px;line-height:2;color:var(--text-2);font-size:14px">
-            <li>切换数据源后需要重启应生效</li>
+            <li>切换数据源后需要重启才能生效</li>
             <li>QMT 模式需要启动 miniQMT 客户端</li>
             <li>Mock 模式适合开发调试，无需任何外部依赖</li>
             <li>Auto 模式会自动尝试 QMT，失败后静默回落到 mock</li>

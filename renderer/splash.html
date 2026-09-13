@@ -2,39 +2,66 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
+<script>
+  // 与主窗口共用 localStorage（同 session partition），启动即套用已保存主题，默认深色
+  try {
+    document.documentElement.setAttribute("data-theme", localStorage.getItem("mookquant.theme") || "dark");
+  } catch (e) {
+    document.documentElement.setAttribute("data-theme", "dark");
+  }
+</script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* 与 base.css 主题变量保持一致（splash 为独立页面，不加载全局样式表） */
+:root {
+  --bg-0: #ffffff;
+  --bg-3: #ececec;
+  --text-1: #0d0d0d;
+  --text-3: #8e8e8e;
+  --accent: #404040;
+  --accent-fg: #ffffff;
+}
+[data-theme="dark"] {
+  --bg-0: #212121;
+  --bg-3: #444444;
+  --text-1: #ececec;
+  --text-3: #8e8e8e;
+  --accent: #d0d0d0;
+  --accent-fg: #171717;
+}
+
 body {
   width: 360px; height: 200px;
-  background: #ffffff;
+  background: var(--bg-0);
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-  color: #0d0d0d;
+  color: var(--text-1);
   -webkit-app-region: drag;
   overflow: hidden;
 }
 .logo {
   width: 40px; height: 40px;
   border-radius: 10px;
-  background: #0d0d0d;
+  background: var(--accent);
   display: flex; align-items: center; justify-content: center;
-  font-size: 16px; font-weight: 700; color: #fff;
+  font-size: 16px; font-weight: 700; color: var(--accent-fg);
   margin-bottom: 16px;
 }
-.title { font-size: 15px; font-weight: 600; margin-bottom: 20px; color: #0d0d0d; }
+.title { font-size: 15px; font-weight: 600; margin-bottom: 20px; color: var(--text-1); }
 .progress-bar {
   width: 240px; height: 3px;
-  background: #ececec;
+  background: var(--bg-3);
   border-radius: 2px; overflow: hidden;
 }
 .progress-fill {
   height: 100%; width: 0%;
-  background: #0d0d0d;
+  background: var(--accent);
   border-radius: 2px;
   transition: width .3s ease;
 }
-.step { font-size: 12px; color: #8e8e8e; margin-top: 10px; }
+.step { font-size: 12px; color: var(--text-3); margin-top: 10px; }
 </style>
 </head>
 <body>

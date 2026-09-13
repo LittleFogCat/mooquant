@@ -1,36 +1,24 @@
 import * as StockSearch from './stock-search.js';
 
-function escapeHtml(s) {
-    return String(s == null ? "" : s).replace(/[&<>"'\/]/g, (c) => ({
-      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "/": "&#x2F;",
-    }[c]));
-  }
 
-  function fmtNum(n, d = 2) {
-    if (n == null || isNaN(n)) return "-";
-    return Number(n).toLocaleString("zh-CN", { minimumFractionDigits: d, maximumFractionDigits: d });
-  }
+import { escapeHtml, fmtNum, cls } from '../utils/format.js';
 
-  function cls(n) {
-    if (n > 0) return "up";
-    if (n < 0) return "down";
-    return "flat";
-  }
+  const ORDER_STATUS_LABELS = { pending: "待成交", filled: "已成交", cancelled: "已撤单" };
 
   function renderOrderForm(state, vm) {
     const f = state.orderForm;
     return `
       <div class="card" style="position:relative;z-index:10">
         <div class="card-title">下单</div>
-        ${state.error ? '<div class="status error" style="margin-bottom:16px">' + escapeHtml(state.error) + "</div>" : ""}
+        ${state.error ? '<div class="status error" style="margin-bottom:16px"><span>' + escapeHtml(state.error) + '</span><button class="status-dismiss" data-dismiss-error>&times;</button></div>' : ""}
         <div class="form-row">
           <div class="form-group" style="flex:2">
             <label class="form-label">股票代码</label>
-            <input class="input-field" id="td_symbol" value="${escapeHtml(f.symbol)}" placeholder="输入代码/名称/拼音，如：sh600519 / 茅台 / zs" autocomplete="off" />
+            <input class="form-input" id="td_symbol" value="${escapeHtml(f.symbol)}" placeholder="输入代码/名称/拼音，如：sh600519 / 茅台 / zs" autocomplete="off" />
           </div>
           <div class="form-group">
             <label class="form-label">方向</label>
-            <select class="input-field" id="td_side">
+            <select class="form-input" id="td_side">
               <option value="buy" ${f.side === "buy" ? "selected" : ""}>买入</option>
               <option value="sell" ${f.side === "sell" ? "selected" : ""}>卖出</option>
             </select>
@@ -39,18 +27,18 @@ function escapeHtml(s) {
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">类型</label>
-            <select class="input-field" id="td_type">
+            <select class="form-input" id="td_type">
               <option value="limit" ${f.orderType === "limit" ? "selected" : ""}>限价</option>
               <option value="market" ${f.orderType === "market" ? "selected" : ""}>市价</option>
             </select>
           </div>
           <div class="form-group">
             <label class="form-label">价格</label>
-            <input class="input-field" type="number" step="0.01" id="td_price" value="${escapeHtml(f.price)}" placeholder="市价单留空" ${f.orderType === "market" ? "disabled" : ""} />
+            <input class="form-input" type="number" step="0.01" id="td_price" value="${escapeHtml(f.price)}" placeholder="市价单留空" ${f.orderType === "market" ? "disabled" : ""} />
           </div>
           <div class="form-group">
             <label class="form-label">数量（股）</label>
-            <input class="input-field" type="number" step="100" id="td_qty" value="${escapeHtml(f.quantity)}" placeholder="100 的整数倍" />
+            <input class="form-input" type="number" step="100" id="td_qty" value="${escapeHtml(f.quantity)}" placeholder="100 的整数倍" />
           </div>
         </div>
         <button class="btn btn-primary" id="td_submit">提交订单</button>
@@ -111,7 +99,7 @@ function escapeHtml(s) {
         <td>${escapeHtml(o.symbol)}</td>
         <td class="num">${o.orderType === "market" ? "市价" : fmtNum(o.price)}</td>
         <td class="num">${o.quantity}</td>
-        <td><span class="badge badge-${o.status}">${escapeHtml(o.status)}</span></td>
+        <td>${ORDER_STATUS_LABELS[o.status] ? `<span class="badge badge-${o.status}">${ORDER_STATUS_LABELS[o.status]}</span>` : escapeHtml(o.status)}</td>
         <td>${o.status === "pending" ? '<button class="btn btn-danger btn-sm" data-cancel="' + escapeHtml(o.orderId) + '">撤单</button>' : ""}</td>
       </tr>
     `).join("");
@@ -158,6 +146,10 @@ function escapeHtml(s) {
       }
       const submitBtn = document.getElementById("td_submit");
       if (submitBtn) submitBtn.addEventListener("click", () => vm.placeOrder());
+
+      root.querySelectorAll("[data-dismiss-error]").forEach((el) => {
+        el.addEventListener("click", () => vm.dismissError && vm.dismissError());
+      });
 
       root.querySelectorAll("[data-cancel]").forEach((el) => {
         el.addEventListener("click", () => vm.cancelOrder(el.dataset.cancel));

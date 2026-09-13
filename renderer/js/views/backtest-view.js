@@ -7,11 +7,9 @@ import { Mandarin } from 'flatpickr/dist/l10n/zh';
 flatpickr.localize(Mandarin);
 import * as KlineChart from './kline-chart.js';
 import * as StockSearch from './stock-search.js';
+import { escapeHtml as esc, fmtPct, fmtNum, cls } from '../utils/format.js';
+import { getThemeColors } from '../utils/chart-theme.js';
 
-function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;","/":"&#x2F;" }[c])); }
-  function fmtPct(n) { if (n == null || isNaN(n)) return "-"; return (n >= 0 ? "+" : "") + Number(n).toFixed(2) + "%"; }
-  function fmtNum(n, d) { d = d || 2; if (n == null || isNaN(n)) return "-"; return Number(n).toLocaleString("zh-CN", { minimumFractionDigits: d, maximumFractionDigits: d }); }
-  function cls(n) { if (n > 0) return "up"; if (n < 0) return "down"; return "flat"; }
   function modelName(m) {
     if (!m) return "";
     if (m.name && m.name !== "unnamed") return m.name;
@@ -34,29 +32,29 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
     return `
       <div class="card">
         <div class="card-title">回测配置</div>
-        ${state.error ? `<div class="status error" style="margin-bottom:16px">${esc(state.error)}</div>` : ""}
+        ${state.error ? `<div class="status error" style="margin-bottom:16px"><span>${esc(state.error)}</span><button class="status-dismiss" data-dismiss-error>&times;</button></div>` : ""}
         <div class="form-group">
           <label class="form-label">选择策略</label>
-          <select class="input-field" id="bt_strategy">${opts || `<option value="">请先在策略页创建策略</option>`}</select>
+          <select class="form-input" id="bt_strategy">${opts || `<option value="">请先在策略页创建策略</option>`}</select>
         </div>
         <div class="form-group">
           <label class="form-label">回测模型 <span style="color:var(--text-3);font-size:11px">（ML/壳策略生效）</span></label>
-          <select class="input-field" id="bt_model">${modelOpts}</select>
+          <select class="form-input" id="bt_model">${modelOpts}</select>
         </div>
         <div class="form-group">
           <label class="form-label">回测标的</label>
-          <input class="input-field" id="bt_symbols" placeholder="输入代码/名称/拼音搜索，逗号分隔多个标的" />
+          <input class="form-input" id="bt_symbols" placeholder="输入代码/名称/拼音搜索，逗号分隔多个标的" />
         </div>
         <div class="form-row">
-          <div class="form-group"><label class="form-label">开始日期</label><input class="input-field" id="bt_start" placeholder="点击选择日期" readonly /></div>
-          <div class="form-group"><label class="form-label">结束日期</label><input class="input-field" id="bt_end" placeholder="点击选择日期" readonly /></div>
+          <div class="form-group"><label class="form-label">开始日期</label><input class="form-input" id="bt_start" placeholder="点击选择日期" readonly /></div>
+          <div class="form-group"><label class="form-label">结束日期</label><input class="form-input" id="bt_end" placeholder="点击选择日期" readonly /></div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label class="form-label">初始资金</label><input class="input-field" type="number" id="bt_capital" value="${state.initialCapital}" /></div>
-          <div class="form-group"><label class="form-label">手续费率</label><input class="input-field" type="number" step="0.0001" id="bt_commission" value="${state.commission}" /></div>
-          <div class="form-group"><label class="form-label">滑点</label><input class="input-field" type="number" step="0.001" id="bt_slippage" value="${state.slippage}" /></div>
+          <div class="form-group"><label class="form-label">初始资金</label><input class="form-input" type="number" id="bt_capital" value="${state.initialCapital}" /></div>
+          <div class="form-group"><label class="form-label">手续费率</label><input class="form-input" type="number" step="0.0001" id="bt_commission" value="${state.commission}" /></div>
+          <div class="form-group"><label class="form-label">滑点</label><input class="form-input" type="number" step="0.001" id="bt_slippage" value="${state.slippage}" /></div>
           <div class="form-group"><label class="form-label">K线周期</label>
-            <select class="input-field" id="bt_period">
+            <select class="form-input" id="bt_period">
               <option value="1d" ${state.period === "1d" ? "selected" : ""}>日线（隔夜策略）</option>
               <option value="1m" ${(state.period || "1m") === "1m" && state.period !== "1d" ? "selected" : ""}>1分钟（日内做T）</option>
               <option value="5m" ${state.period === "5m" ? "selected" : ""}>5分钟（日内）</option>
@@ -68,7 +66,7 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
         </div>
         ${state.period && state.period !== "1d" ? `
         <div class="form-row">
-          <div class="form-group"><label class="form-label">底仓股数 <span style="color:var(--text-3);font-size:11px">（做T需先有底仓，回测首日以开盘价自动建立）</span></label><input class="input-field" type="number" step="100" id="bt_basePositionShares" value="${state.basePositionShares}" /></div>
+          <div class="form-group"><label class="form-label">底仓股数 <span style="color:var(--text-3);font-size:11px">（做T需先有底仓，回测首日以开盘价自动建立）</span></label><input class="form-input" type="number" step="100" id="bt_basePositionShares" value="${state.basePositionShares}" /></div>
           <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px">
             <label class="form-label" style="display:flex;align-items:center;gap:6px;cursor:pointer">
               <input type="checkbox" id="bt_forceEodClose" ${state.forceEodClose ? "checked" : ""} /> 尾盘 14:55 强制平T仓（还原底仓）
@@ -78,7 +76,7 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
         </div>` : ""}
         <div class="form-row">
           <div class="form-group"><label class="form-label">撮合口径</label>
-            <select class="input-field" id="bt_fillModel">
+            <select class="form-input" id="bt_fillModel">
               <option value="next_open" ${state.fillModel === "next_open" ? "selected" : ""}>次日开盘成交（保守，推荐）</option>
               <option value="close" ${state.fillModel === "close" ? "selected" : ""}>收盘价成交（乐观）</option>
             </select>
@@ -97,14 +95,14 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
         <details style="margin:12px 0">
           <summary style="cursor:pointer;color:var(--text-3);font-size:13px">风控与仓位（高级，默认关闭）</summary>
           <div class="form-row" style="margin-top:10px">
-            <div class="form-group"><label class="form-label">止损比例</label><input class="input-field" type="number" step="0.01" id="bt_stopLoss" value="${state.stopLoss}" /></div>
-            <div class="form-group"><label class="form-label">止盈比例</label><input class="input-field" type="number" step="0.01" id="bt_takeProfit" value="${state.takeProfit}" /></div>
-            <div class="form-group"><label class="form-label">最大持仓天数</label><input class="input-field" type="number" step="1" id="bt_maxHoldDays" value="${state.maxHoldDays}" /></div>
+            <div class="form-group"><label class="form-label">止损比例</label><input class="form-input" type="number" step="0.01" id="bt_stopLoss" value="${state.stopLoss}" /></div>
+            <div class="form-group"><label class="form-label">止盈比例</label><input class="form-input" type="number" step="0.01" id="bt_takeProfit" value="${state.takeProfit}" /></div>
+            <div class="form-group"><label class="form-label">最大持仓天数</label><input class="form-input" type="number" step="1" id="bt_maxHoldDays" value="${state.maxHoldDays}" /></div>
           </div>
           <div class="form-row">
-            <div class="form-group"><label class="form-label">连续亏损熔断</label><input class="input-field" type="number" step="1" id="bt_maxConsecLosses" value="${state.maxConsecLosses}" /></div>
-            <div class="form-group"><label class="form-label">熔断冻结天数</label><input class="input-field" type="number" step="1" id="bt_cooldownDays" value="${state.cooldownDays}" /></div>
-            <div class="form-group"><label class="form-label">单笔最大仓位</label><input class="input-field" type="number" step="0.05" id="bt_maxPositionPct" value="${state.maxPositionPct}" /></div>
+            <div class="form-group"><label class="form-label">连续亏损熔断</label><input class="form-input" type="number" step="1" id="bt_maxConsecLosses" value="${state.maxConsecLosses}" /></div>
+            <div class="form-group"><label class="form-label">熔断冻结天数</label><input class="form-input" type="number" step="1" id="bt_cooldownDays" value="${state.cooldownDays}" /></div>
+            <div class="form-group"><label class="form-label">单笔最大仓位</label><input class="form-input" type="number" step="0.05" id="bt_maxPositionPct" value="${state.maxPositionPct}" /></div>
           </div>
           <div class="form-row">
             <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px">
@@ -120,8 +118,8 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
                 <input type="checkbox" id="bt_regimeEnabled" ${state.regimeEnabled ? "checked" : ""} /> 市场状态过滤（仅指数站上均线时做多）
               </label>
             </div>
-            <div class="form-group"><label class="form-label">指数代码</label><input class="input-field" id="bt_regimeIndex" value="${esc(state.regimeIndex)}" /></div>
-            <div class="form-group"><label class="form-label">指数均线周期</label><input class="input-field" type="number" step="1" id="bt_regimeFast" value="${state.regimeFast}" /></div>
+            <div class="form-group"><label class="form-label">指数代码</label><input class="form-input" id="bt_regimeIndex" value="${esc(state.regimeIndex)}" /></div>
+            <div class="form-group"><label class="form-label">指数均线周期</label><input class="form-input" type="number" step="1" id="bt_regimeFast" value="${state.regimeFast}" /></div>
             <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:2px">
               <label class="form-label" style="display:flex;align-items:center;gap:6px;cursor:pointer">
                 <input type="checkbox" id="bt_regimeOwnMa" ${state.regimeOwnMa ? "checked" : ""} /> 个股也需站上均线
@@ -156,6 +154,8 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
     const m = result.metrics || {};
     const trades = result.trades || [];
     const equity = result.equityCurve || [];
+    const FILL_LABELS = { next_open: "次日开盘成交", close: "收盘价成交", intraday_1m: "日内1分钟" };
+    const fillLabel = FILL_LABELS[result.fillModel] || "";
     const statsHtml = `
       <div class="stat-card"><div class="stat-label">总收益率</div><div class="stat-value ${cls(m.totalReturn)}">${fmtPct(m.totalReturn)}</div></div>
       <div class="stat-card"><div class="stat-label">区间涨幅</div><div class="stat-value ${cls(m.benchmarkReturn)}">${fmtPct(m.benchmarkReturn)}</div></div>
@@ -250,9 +250,9 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
     const rb = result.robustness;
     if (!rb) return "";
     const v = rb.verdict || {};
-    const gradeMap = { green: ["稳健", "#22c55e"], yellow: ["一般", "#eab308"], red: ["脆弱", "#ef4444"] };
-    const g = gradeMap[v.overall] || ["-", "var(--text-3)"];
-    let html = `<div class="card"><div class="card-title">稳健性分析 <span class="badge" style="background:${g[1]}22;color:${g[1]};border:1px solid ${g[1]}66">${g[0]}</span></div>`;
+    const gradeMap = { green: ["稳健", "badge-grade-green"], yellow: ["一般", "badge-grade-yellow"], red: ["脆弱", "badge-grade-red"] };
+    const g = gradeMap[v.overall] || ["-", ""];
+    let html = `<div class="card"><div class="card-title">稳健性分析 <span class="badge ${g[1]}">${g[0]}</span></div>`;
     html += `<p style="color:var(--text-3);font-size:12px;margin:0 0 12px">${esc(v.summary || "")}</p>`;
     if (rb.cost && rb.cost.length) {
       html += `<div style="font-size:12px;color:var(--text-3);margin:8px 0 4px">成本敏感性（佣金/印花税/过户费缩放）</div><table class="data-table"><thead><tr><th>成本档</th><th class="num">总收益</th><th class="num">年化</th><th class="num">最大回撤</th><th class="num">交易数</th><th class="num">胜率</th></tr></thead><tbody>`;
@@ -277,7 +277,12 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
     return html;
   }
 
+  let _lastEquity = null, _lastTrades = null;
+  let _equityThemeObserver = null;
+
   function renderEquityCurve(equity, trades) {
+    _lastEquity = equity || null;
+    _lastTrades = trades || null;
     const container = document.getElementById("equityChart");
     if (_equityChart) { try { _equityChart.dispose(); } catch (e) {} _equityChart = null; }
     if (container) {
@@ -286,7 +291,8 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
     }
     if (!container || !equity || equity.length < 2) return;
 
-    _equityChart = echarts.init(container, "dark");
+    var tc = getThemeColors();
+    _equityChart = echarts.init(container);
     var dates = equity.map(function (e) { return e.date; });
     var values = equity.map(function (e) { return Number(e.value); });
 
@@ -323,49 +329,55 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
             if (p.seriesType === "scatter" && p.data != null) {
               var d = p.data;
               var label = d.side === "buy" ? "\u4e70\u5165" : "\u5356\u51fa";
-              var color = d.side === "buy" ? "#ef4444" : "#22c55e";
+              var color = d.side === "buy" ? tc.red : tc.green;
               lines.push('<span style="color:' + color + '">' + label + ": " + fmtNum(d.price) + " \u80a1 \u6570\u91cf: " + d.quantity + " \u91d1\u989d: " + fmtNum(d.amount, 0) + "</span>");
               if (d.pnl != null) lines.push('<span style="color:' + color + '">\u76c8\u4e8f: ' + fmtNum(d.pnl) + "</span>");
             }
           }
           return lines.join("<br/>");
         },
-        backgroundColor: "rgba(26,26,37,0.95)",
-        borderColor: "rgba(255,255,255,0.08)",
-        textStyle: { color: "#e8e8ed", fontSize: 12 }
+        backgroundColor: tc.tooltipBg,
+        borderColor: tc.border,
+        textStyle: { color: tc.text1, fontSize: 12 }
       },
       grid: { left: "8%", right: "6%", top: "8%", bottom: "18%" },
       xAxis: {
         type: "category", data: dates, boundaryGap: false,
-        axisLine: { lineStyle: { color: "rgba(255,255,255,0.1)" } },
-        axisLabel: { color: "#5a5a68", fontSize: 10 }
+        axisLine: { lineStyle: { color: tc.axisLine } },
+        axisLabel: { color: tc.axisLabel, fontSize: 10 }
       },
       yAxis: {
         scale: true,
-        splitLine: { lineStyle: { color: "rgba(255,255,255,0.04)" } },
-        axisLabel: { color: "#5a5a68", fontSize: 10, formatter: function (v) { return fmtNum(v, 0); } }
+        splitLine: { lineStyle: { color: tc.gridLine } },
+        axisLabel: { color: tc.axisLabel, fontSize: 10, formatter: function (v) { return fmtNum(v, 0); } }
       },
       dataZoom: [
         { type: "inside", start: 0, end: 100 },
         { show: true, type: "slider", start: 0, end: 100, height: 16, bottom: 8,
-          borderColor: "transparent", backgroundColor: "rgba(255,255,255,0.03)",
-          fillerColor: "rgba(99,102,241,0.15)", handleStyle: { color: "#6366f1" },
-          textStyle: { color: "#5a5a68", fontSize: 10 } }
+          borderColor: "transparent", backgroundColor: tc.zoomBg,
+          fillerColor: tc.zoomFiller, handleStyle: { color: tc.accent },
+          textStyle: { color: tc.axisLabel, fontSize: 10 } }
       ],
       series: [
         { name: "\u51c0\u503c", type: "line", data: values, smooth: false, symbol: "none",
-          lineStyle: { color: "#6366f1", width: 2 },
-          areaStyle: { color: "rgba(99,102,241,0.1)" } },
+          lineStyle: { color: tc.accent, width: 2 },
+          areaStyle: { color: tc.areaFill } },
         { name: "\u4e70\u5165", type: "scatter", data: buyPts, symbol: "circle", symbolSize: 8,
-          itemStyle: { color: "#ef4444" }, z: 10 },
+          itemStyle: { color: tc.red }, z: 10 },
         { name: "\u5356\u51fa", type: "scatter", data: sellPts, symbol: "circle", symbolSize: 8,
-          itemStyle: { color: "#22c55e" }, z: 10 }
+          itemStyle: { color: tc.green }, z: 10 }
       ]
     }, true);
 
     if (!window._equityResizeBound) {
       window._equityResizeBound = true;
       window.addEventListener("resize", function () { if (_equityChart) _equityChart.resize(); });
+    }
+    if (!_equityThemeObserver && typeof MutationObserver !== "undefined") {
+      _equityThemeObserver = new MutationObserver(function () {
+        if (_lastEquity && _lastEquity.length > 1) renderEquityCurve(_lastEquity, _lastTrades);
+      });
+      _equityThemeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     }
   }
 
@@ -490,7 +502,7 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
       <details id="bt_history" style="margin-top:16px">
         <summary style="cursor:pointer;color:var(--text-3);font-size:13px">历史回测（${hist.length} 次）· 勾选 2 个以上可 A/B 对比</summary>
         <div style="margin:10px 0">
-          <button class="btn btn-ghost" id="bt_compare" ${selCount < 2 ? "disabled" : ""}>对比所选（${selCount}）</button>
+          <button class="btn btn-secondary" id="bt_compare" ${selCount < 2 ? "disabled" : ""}>对比所选（${selCount}）</button>
         </div>
         ${hist.length ? `<div style="max-height:260px;overflow:auto"><table class="data-table"><thead><tr><th></th><th>时间</th><th>策略</th><th>标的</th><th class="num">总收益</th><th class="num">最大回撤</th><th class="num">交易数</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty-state"><div class="empty-state-text">暂无历史回测</div></div>`}
         ${cmpHtml}
@@ -508,6 +520,10 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
       if (_equityChart) { try { _equityChart.dispose(); } catch (e) {} _equityChart = null; }
 
       root.innerHTML = renderConfig(state, vm) + renderResult(state.result) + renderHistory(state, vm);
+
+      root.querySelectorAll("[data-dismiss-error]").forEach((el) => {
+        el.addEventListener("click", () => vm.dismissError && vm.dismissError());
+      });
 
       // Bind strategy select
       const stratEl = document.getElementById("bt_strategy");
@@ -570,7 +586,6 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"'/]/g, c => ({
       const fpConfig = (field) => ({
         locale: "zh",
         dateFormat: "Y-m-d",
-        theme: "dark",
         maxDate: "today",
         onChange: (dates, val) => vm.setField(field, val),
         onYearChange: (selectedDates, dateStr, instance) => {

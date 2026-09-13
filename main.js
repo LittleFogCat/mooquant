@@ -61,7 +61,7 @@ function createSplashWindow() {
     width: 360, height: 200,
     frame: false, resizable: false, movable: true,
     transparent: false,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#212121",
     show: true,
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });

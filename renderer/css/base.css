@@ -24,6 +24,8 @@
   --green: #22c55e;
   --red: #ef4444;
   --orange: #f59e0b;
+  --yellow: #eab308;
+  --navy: #2e4a7d;
 
   /* Borders */
   --border: rgba(0, 0, 0, 0.08);
@@ -68,6 +70,8 @@
   --green: #22c55e;
   --red: #ef4444;
   --orange: #f59e0b;
+  --yellow: #eab308;
+  --navy: #3d6099;
 
   --border: rgba(255, 255, 255, 0.08);
   --border-hover: rgba(255, 255, 255, 0.15);

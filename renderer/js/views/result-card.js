@@ -1,30 +1,4 @@
-function escapeHtml(s) {
-    return String(s).replace(/[&<>"'\/]/g, (c) => ({
-      "&": "&amp;", "<": "&lt;", ">": "&gt;",
-      "\"": "&quot;", "'": "&#39;", "/": "&#x2F;",
-    }[c]));
-  }
-
-  function fmtNumber(n, digits = 2) {
-    if (n === null || n === undefined || isNaN(n)) return "—";
-    return n.toLocaleString("zh-CN", {
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits,
-    });
-  }
-
-  function fmtBig(n) {
-    if (n === null || n === undefined) return "—";
-    if (n >= 1e8) return (n / 1e8).toFixed(2) + " 亿";
-    if (n >= 1e4) return (n / 1e4).toFixed(2) + " 万";
-    return n.toLocaleString("zh-CN");
-  }
-
-  function cls(change) {
-    if (change > 0) return "up";
-    if (change < 0) return "down";
-    return "flat";
-  }
+import { escapeHtml, fmtNum as fmtNumber, fmtBig, cls } from '../utils/format.js';
 
   function badge(market) {
     if (market === "sh") return "badge-sh";
@@ -71,7 +45,7 @@ function escapeHtml(s) {
             <div class="stock-symbol">${escapeHtml(d.code)}</div>
             <span class="stock-market-badge ${badge(d.market)}">${escapeHtml(d.marketName)} · ${escapeHtml(d.currency)}</span>
           </div>
-          <button class="btn btn-secondary btn-sm wl-toggle-btn" id="wlToggleBtn">⭐ 加入自选</button>
+          <button class="btn btn-secondary btn-sm wl-toggle-btn" id="wlToggleBtn">加入自选</button>
           <div class="price-block">
             <div class="current-price ${k}">${fmtNumber(d.price)}</div>
             <div class="change-row ${k}">
@@ -104,7 +78,7 @@ function escapeHtml(s) {
       const wl = window._watchlistVM;
       if (wl) {
         const sym = state.data.code.toLowerCase();
-        if (wl.has(sym)) { btn.textContent = "✔ 已加入自选"; btn.classList.add("active"); }
+        if (wl.has(sym)) { btn.textContent = "已加入自选"; btn.classList.add("active"); }
         btn.onclick = () => { wl.toggle({ symbol: sym, name: state.data.name }); };
       }
     } else if (btn) { btn.style.display = "none"; }
