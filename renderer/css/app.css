@@ -45,6 +45,7 @@
 .status-dot.online{background:var(--green);animation:pulse 2s infinite}
 .status-dot.offline{background:var(--red)}
 .status-dot.mock{background:var(--orange)}
+.status-dot.connecting{background:var(--orange);animation:pulse 1s infinite}
 .env-badge{display:inline-block;padding:3px 10px;font-size:11px;color:var(--text-3);background:var(--bg-2);border-radius:6px;margin-bottom:8px}
 .env-badge[hidden]{display:none}
 .app-version{font-size:11px;color:var(--text-3);margin-left:auto}

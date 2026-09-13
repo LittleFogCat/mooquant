@@ -10,7 +10,8 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
     ipcMain.handle("quote:search", async (_e, q) => quoteService.search(q));
   ipcMain.handle("quote:syncStocks", async () => quoteService.syncStocks());
   ipcMain.handle("quote:stockList", async () => quoteService.getStockList());
-  ipcMain.handle("quote:status", async () => quoteService.getStatus());
+  ipcMain.handle("quote:status", async () => await quoteService.getStatus());
+  ipcMain.handle("quote:reconnect", async () => await quoteService.reconnect());
   // ---- ???? ----
   ipcMain.handle("window:minimize", async () => { const w = getMainWindow(); if (w) w.minimize(); });
   ipcMain.handle("window:maximize", async () => {

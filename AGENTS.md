@@ -41,7 +41,7 @@ renderer/                        main/                           bridge/
 - **`main.js`** — 只做窗口创建、IPC 注册、依赖图组装（DataSource → Service → IPC）、生命周期管理、CSP 头注入。不写业务。
 - **`main/ipc/index.js`** — IPC 路由，*唯一职责是把调用转给 Service，绝不写业务逻辑*。
 - **`main/services/quote-service.js`** — 业务编排层：查询 + 可选 TTL 缓存 + 统一 `{ok, data?, error?}` 返回格式。
-- **`main/datasources/`** — 数据源抽象层。所有实现遵循同一接口：`{ mode, description, async getQuote(rawSymbol), dispose() }`。`createDataSource({mode})` 工厂按模式实例化；`auto` 模式在 `index.js` 里 try QMT、catch 回落 mock。
+- **`main/datasources/`** — 数据源抽象层。所有实现遵循同一接口：`{ mode, description, async getQuote(rawSymbol), dispose() }`（QMT 实现另提供可选 `ping()` 健康检查与 `restart()` 重启，供连接状态真实探测与断线自愈）。`createDataSource({mode})` 工厂按模式实例化；`auto` 模式在 `index.js` 里 try QMT、catch 回落 mock。
   - `mock.js` — 本地模拟数据，分钟级时间种子缓慢变动模拟"实时"感
   - `qmt.js` — spawn Python 子进程，stdio JSON-RPC 通信，代码格式转换（`sh600519` → `600519.SH`）
 

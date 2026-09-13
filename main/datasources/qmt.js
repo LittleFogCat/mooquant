@@ -86,10 +86,12 @@ class QmtDataSource {
       proc.on("exit", (code, signal) => {
         const msg = `[qmt] 子进程退出 code=${code} signal=${signal}`;
         process.stderr.write(msg + "\n");
+        // 仅当前活跃进程退出才清理状态（防止 restart 后旧进程的退出事件污染新进程）
+        if (this._proc !== proc) return;
         this._ready = false;
         this._proc = null;
         // 拒绝所有等待中的请求
-        for (const [, p] of this._pending) p.reject(new Error("QMT 桥进程已退出"));
+        for (const [, p] of this._pending) { if (p.cleanup) p.cleanup(); p.reject(new Error("QMT 桥进程已退出")); }
         this._pending.clear();
         for (const h of this._exitHandlers) try { h(msg); } catch {}
       });
@@ -129,6 +131,7 @@ class QmtDataSource {
     if (msg.id && this._pending.has(msg.id)) {
       const p = this._pending.get(msg.id);
       this._pending.delete(msg.id);
+      if (p.cleanup) p.cleanup();
       if (msg.error) p.reject(new Error(msg.error));
       else p.resolve(msg.result);
     }
@@ -158,18 +161,68 @@ class QmtDataSource {
     }
   }
 
-  _request(method, params = {}) {
+  _request(method, params = {}, timeoutMs = 0) {
     const id = String(++this._reqSeq);
     return new Promise((resolve, reject) => {
       if (!this._proc) return reject(new Error("QMT 桥未启动"));
-      this._pending.set(id, { resolve, reject });
+      const entry = { resolve, reject, cleanup: null };
+      // 可选超时：防止桥子进程挂死时请求永久悬挂
+      if (timeoutMs > 0) {
+        const timer = setTimeout(() => {
+          if (this._pending.delete(id)) entry.reject(new Error("请求超时: " + method));
+        }, timeoutMs);
+        entry.cleanup = () => clearTimeout(timer);
+      }
+      this._pending.set(id, entry);
       try {
         this._send({ id, method, params });
       } catch (e) {
         this._pending.delete(id);
+        if (entry.cleanup) entry.cleanup();
         reject(e);
       }
     });
+  }
+
+  /**
+   * 健康检查：探测桥进程存活 + miniQMT 数据链路是否可用
+   * @param {{probe?:boolean, reconnect?:boolean, timeoutMs?:number}} opts
+   * @returns {Promise<{alive:boolean, connected:boolean, error:string|null}>}
+   */
+  async ping(opts = {}) {
+    if (!this._proc || !this._ready) {
+      return { alive: false, connected: false, error: this._lastError || "QMT 桥未启动" };
+    }
+    try {
+      const r = await this._request("ping", {
+        port: this._options.port || 58610,
+        probe: opts.probe !== false,
+        reconnect: !!opts.reconnect,
+      }, opts.timeoutMs || 5000);
+      this._lastError = r.connected ? null : (r.error || "miniQMT 未连接");
+      return { alive: true, connected: !!r.connected, error: r.error || null };
+    } catch (e) {
+      this._lastError = e.message;
+      return { alive: false, connected: false, error: e.message };
+    }
+  }
+
+  /**
+   * 重启桥子进程（断线自愈用）。
+   * 保留推送/退出回调（tick 转发等），只重建进程与请求状态。
+   */
+  async restart() {
+    if (this._proc) {
+      try { this._proc.kill(); } catch {}
+      this._proc = null;
+    }
+    this._rl = null;
+    this._ready = false;
+    this._initPromise = null;
+    this._lastError = null;
+    for (const [, p] of this._pending) { if (p.cleanup) p.cleanup(); p.reject(new Error("QMT 桥重启")); }
+    this._pending.clear();
+    return this.init();
   }
 
   /**

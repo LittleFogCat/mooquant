@@ -38,16 +38,20 @@ if (!facade) { console.error("[main] Facade not ready"); }
 window.AppFacade = facade;
 window.AppRouter = Router;
 
+// ---- 跨区块引用（F5 刷新需要触达各页 ViewModel）----
+const pageVM = { quote: null, watchlist: null, strategy: null, backtest: null, trade: null, settings: null, model: null };
+
 // ---- 行情页 ----
 safe('行情页', () => {
   const quoteVM = new QuoteViewModel(facade);
+  pageVM.quote = quoteVM;
   SearchPanelView.render(document.getElementById("searchPanel"), quoteVM);
   ResultCardView.render(document.getElementById("result"), quoteVM.state, "");
-  StatusToastView.render(document.getElementById("status"), quoteVM.state);
+  StatusToastView.render(document.getElementById("status"), quoteVM.state, quoteVM);
   quoteVM.subscribe(state => {
     const mode = quoteVM.state.info?.mode || "mock";
     ResultCardView.render(document.getElementById("result"), state, mode);
-    StatusToastView.render(document.getElementById("status"), state);
+    StatusToastView.render(document.getElementById("status"), state, quoteVM);
   });
   quoteVM.loadInfo();
   window._quickQuery = (symbol) => quoteVM.querySymbol(symbol);
@@ -58,6 +62,7 @@ safe('行情页', () => {
   // 自选股
   safe('自选股', () => {
     const watchlistVM = new WatchlistViewModel(facade);
+    pageVM.watchlist = watchlistVM;
     WatchlistView.render(document.getElementById("watchlistPanel"), watchlistVM, quoteVM);
     watchlistVM.startAutoRefresh();
     window._watchlistVM = watchlistVM;
@@ -70,6 +75,7 @@ safe('行情页', () => {
 // ---- 策略页 ----
 safe('策略页', () => {
   const strategyVM = new StrategyViewModel(facade);
+  pageVM.strategy = strategyVM;
   StrategyView.render(document.getElementById("strategyContainer"), strategyVM);
   Router.onEnter("strategy", () => strategyVM.loadList());
 
@@ -86,6 +92,7 @@ safe('策略页', () => {
 // ---- 回测页 ----
 safe('回测页', () => {
   const backtestVM = new BacktestViewModel(facade);
+  pageVM.backtest = backtestVM;
   BacktestView.render(document.getElementById("backtestContainer"), backtestVM);
   Router.onEnter("backtest", () => backtestVM.loadStrategies());
   Router.onLeave("backtest", () => backtestVM.unsubscribeProgress());
@@ -94,6 +101,7 @@ safe('回测页', () => {
 // ---- 交易页 ----
 safe('交易页', () => {
   const tradeVM = new TradeViewModel(facade);
+  pageVM.trade = tradeVM;
   TradeView.render(document.getElementById("tradeContainer"), tradeVM);
   Router.onEnter("trade", () => tradeVM.loadAll());
 });
@@ -101,6 +109,7 @@ safe('交易页', () => {
 // ---- 设置页 ----
 safe('设置页', () => {
   const settingsVM = new SettingsViewModel(facade);
+  pageVM.settings = settingsVM;
   SettingsView.render(document.getElementById("settingsContainer"), settingsVM);
   Router.onEnter("settings", () => settingsVM.load());
 });
@@ -114,39 +123,49 @@ safe('应用版本号', () => {
   }).catch(() => {});
 });
 
-// ---- QMT 状态轮询 ----
-safe('QMT状态', () => {
-  async function pollQmtStatus() {
+// ---- QMT 状态轮询（真实探测：connected 由主进程 ping 桥 + 数据探测得出）----
+function renderQmtStatus(status) {
+  const indicator = document.getElementById("qmtStatus");
+  if (!indicator || !status) return;
+  const dot = indicator.querySelector(".status-dot");
+  const text = indicator.querySelector(".status-text");
+  if (!dot || !text) return;
+  if (status.reconnecting) {
+    dot.className = "status-dot connecting";
+    text.textContent = "重连中...";
+  } else if (status.connected) {
+    dot.className = "status-dot online";
+    text.textContent = "QMT 已连接";
+  } else if (status.mode === "mock") {
+    dot.className = "status-dot mock";
+    // auto 模式回落到 mock：提示 QMT 不可用（按 F5 可重试 QMT）
+    text.textContent = status.configuredMode === "auto" ? "Mock · QMT 不可用" : "Mock 模式";
+  } else {
+    dot.className = "status-dot offline";
+    text.textContent = "QMT 未连接";
+  }
+  indicator.title = status.error ? "连接异常：" + status.error : "";
+}
+
+async function pollQmtStatus() {
+  try {
+    renderQmtStatus(await facade.quote.status());
+  } catch (e) {
     const indicator = document.getElementById("qmtStatus");
     if (!indicator) return;
-    try {
-      const status = await facade.quote.status();
-      const dot = indicator.querySelector(".status-dot");
-      const text = indicator.querySelector(".status-text");
-      if (status.connected) {
-        dot.className = "status-dot online";
-        text.textContent = "QMT 已连接";
-      } else if (status.mode === "mock") {
-        dot.className = "status-dot mock";
-        text.textContent = "Mock 模式";
-      } else {
-        dot.className = "status-dot offline";
-        text.textContent = "QMT 未连接";
-      }
-    } catch (e) {
-      const dot = indicator.querySelector(".status-dot");
-      const text = indicator.querySelector(".status-text");
-      if (dot) dot.className = "status-dot offline";
-      if (text) text.textContent = "状态未知";
-    }
+    const dot = indicator.querySelector(".status-dot");
+    const text = indicator.querySelector(".status-text");
+    if (dot) dot.className = "status-dot offline";
+    if (text) text.textContent = "状态未知";
   }
-  pollQmtStatus();
-  setInterval(pollQmtStatus, 5000);
-});
+}
+pollQmtStatus();
+setInterval(pollQmtStatus, 5000);
 
 // ---- 模型页 ----
 safe('模型页', () => {
   const modelVM = new ModelViewModel(facade);
+  pageVM.model = modelVM;
   ModelView.render(document.getElementById("modelContainer"), modelVM);
   Router.onEnter("models", () => modelVM.loadAll());
   Router.onLeave("models", () => modelVM.stopPolling());
@@ -234,6 +253,51 @@ safe('设置快捷入口', () => {
   const btn = document.getElementById('settingsBtn');
   if (!btn) return;
   btn.addEventListener('click', () => Router.switchPage('settings'));
+});
+
+// ---- F5 / Ctrl+R 全局刷新（重连数据源 + 重拉当前页数据）----
+safe('F5刷新', () => {
+  async function refreshApp() {
+    const text = document.querySelector("#qmtStatus .status-text");
+    if (text) text.textContent = "正在刷新...";
+    // 1. 重连/校验数据源（断线时重建链路；auto 回落 mock 时尝试切回 QMT）
+    try {
+      renderQmtStatus(await facade.quote.reconnect());
+    } catch (e) {
+      console.warn("[main] 重连失败:", e);
+      pollQmtStatus();
+    }
+    // 2. 按当前页面重拉数据
+    const page = Router.currentPage();
+    try {
+      if (page === "quote") {
+        if (pageVM.quote) {
+          pageVM.quote.loadInfo();
+          if (pageVM.quote.state.symbol) pageVM.quote.querySymbol(pageVM.quote.state.symbol);
+        }
+        if (pageVM.watchlist) pageVM.watchlist.refresh();
+      } else if (page === "strategy" && pageVM.strategy) {
+        pageVM.strategy.loadList();
+        pageVM.strategy.loadExecutorStatus();
+      } else if (page === "backtest" && pageVM.backtest) {
+        pageVM.backtest.loadStrategies();
+      } else if (page === "trade" && pageVM.trade) {
+        pageVM.trade.loadAll();
+      } else if (page === "models" && pageVM.model) {
+        pageVM.model.loadAll();
+      } else if (page === "settings" && pageVM.settings) {
+        pageVM.settings.load();
+      }
+    } catch (e) {
+      console.error("[main] 刷新页面数据失败:", e);
+    }
+  }
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r")) {
+      e.preventDefault();
+      refreshApp();
+    }
+  });
 });
 
 Router.init();

@@ -186,7 +186,8 @@ if (window.mookquant && window.mookquant.facade) { return window.mookquant.facad
   };
   return {
     quote: { query: mockQuery, info: async () => ({ mode: "mock", description: "前端 mock" }), history: async (s, p, c, dt) => mockHistory(s, p, c),
-      search: async (q) => ({ ok: true, data: searchStocks(q) }), status: async () => ({ mode: "mock", description: "mock", connected: false }) },
+      search: async (q) => ({ ok: true, data: searchStocks(q) }), status: async () => ({ mode: "mock", description: "mock", connected: false }),
+      reconnect: async () => ({ mode: "mock", description: "mock", connected: false }) },
     strategy: strategyMock, backtest: backtestMock, trade: tradeMock, settings: settingsMock,
     modelServer: {
     status: async () => ({ ok: false, data: { ready: false, port: 18765 } }),

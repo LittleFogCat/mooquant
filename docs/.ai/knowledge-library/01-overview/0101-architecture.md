@@ -151,12 +151,29 @@ class DataSource {
   async getHistory(symbol, period, count, dividendType) -> { bars: [...] }
   async getStockList() -> { stocks: [...] }              // 可选
   async syncStocks() -> { total, stocks }                // 可选
+  async ping(opts) -> { alive, connected, error }        // 可选：健康检查（真实探测）
+  async restart() -> Promise                             // 可选：重启（断线自愈）
   onPush(event, cb) -> unsubscribe                        // 实时推送
   dispose()
 }
 ```
 
 新增数据源（例如 Tushare / Wind）只需新增一个实现类并在工厂中注册，不影响上层代码。
+
+### 4.1 连接状态与断线重连（v0.1.30）
+
+左下角连接状态灯的 `connected` **由真实探测得出**，不凭 `mode` 字段推断：
+
+```
+渲染层状态灯（5s 轮询） -> quote:status -> QuoteService.getStatus()
+  -> QmtDataSource.ping() --stdio JSON-RPC--> qmt_server.py handle_ping(probe=true)
+  -> _probe_tick(): 拉基准标的（000001.SH / 600519.SH）实时 tick 验证数据链路
+```
+
+- **探测语义**：`xt.connect()` 失败不一定抛异常，所以「已连接」必须以**能拿到真实数据**为准；探测失败时桥重置 `_CONNECTED`，下次调用自动重连。
+- **定时重连**：主进程 `QuoteService.startSupervision(10s)` 巡检，QMT 源断线时自动重连——桥进程死亡则 `restart()` 重启子进程（保留 tick 推送回调）；miniQMT 掉线则带 `reconnect` 标志重 ping。
+- **F5 / Ctrl+R 刷新**（渲染层 `renderer/js/main.js`）：触发 `quote:reconnect` IPC + 按当前页面重拉数据（行情页重查当前标的/自选股，策略/回测/交易/模型/设置页各调 load*）。auto 模式曾回落 mock 时，重连会按原配置重建数据源并切回 QMT（成功后清缓存重新拉股票列表）。
+- **状态返回**：`{ mode, configuredMode, connected, error, reconnecting, stockCount }`；`configuredMode: "auto"` 且 mode 为 mock 时，状态灯显示「Mock · QMT 不可用」提示。
 
 ---
 ## 5. 模型管理架构

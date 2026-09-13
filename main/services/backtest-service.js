@@ -21,6 +21,11 @@ class BacktestService {
     return this._engine;
   }
 
+  // 回测进度回调：转发引擎的 backtest.progress 通知（引擎 → 服务 → 渲染进程）
+  onProgress(cb) {
+    this._getEngine().onProgress(cb);
+  }
+
   async run({ strategyId, modelId, symbols, startDate, endDate, initialCapital, commission, slippage, dividendType, period, fillModel, allowMock }) {
     // 加载策略
     const strategy = await this.strategyService.getById(strategyId);

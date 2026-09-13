@@ -2,13 +2,17 @@
  * mookquant · Quote Service（主进程）
  */
 class QuoteService {
-  constructor({ source, cacheTtlMs = 0 }) {
+  constructor({ source, cacheTtlMs = 0, configuredMode = "", recreateSource = null }) {
     this.source = source;
     this.cacheTtlMs = cacheTtlMs;
     this._cache = new Map();
     this._stockList = null;        // 缓存的股票列表
     this._stockListPinyin = null;  // 预计算拼音首字母
     this._stockListPromise = null; // 防止重复加载
+    this._configuredMode = configuredMode;  // 配置的数据源模式（auto 回落 mock 时供 UI 提示）
+    this._recreateSource = recreateSource;  // 重建数据源工厂（重连时 auto 回落 mock 场景用）
+    this._reconnecting = false;    // 重连进行中标志（防并发重入）
+    this._superviseTimer = null;   // 断线自动重连巡检定时器
   }
 
   _cacheKey(s) { return (s || "").trim().toLowerCase(); }
@@ -155,16 +159,96 @@ class QuoteService {
     }
   }
 
-  getStatus() {
-    return {
+  /**
+   * 数据源状态（真实探测，不凭 mode 字段判断）。
+   * QMT 源向桥发带数据探测的 ping，connected 仅在链路真的可用时为 true；
+   * mock 源 connected 恒为 false（UI 按 mode 展示 Mock 模式）。
+   */
+  async getStatus() {
+    const status = {
       mode: this.source.mode || "unknown",
       description: this.source.description || "",
-      connected: this.source.mode === "qmt",
+      configuredMode: this._configuredMode,
+      connected: false,
+      error: null,
+      reconnecting: this._reconnecting,
       stockCount: this._stockList ? this._stockList.length : 0,
     };
+    if (this.source.mode === "qmt" && typeof this.source.ping === "function") {
+      const p = await this.source.ping();
+      status.connected = !!p.connected;
+      status.error = p.error || null;
+    }
+    return status;
+  }
+
+  /**
+   * 重连数据源：
+   *  - QMT 源：带重连标志 ping（重置桥内连接状态）；桥进程死亡则重启子进程
+   *  - auto 回落 mock：按原配置重建数据源，QMT 恢复可用则切换回真实行情
+   */
+  async reconnect() {
+    if (this._reconnecting) return this.getStatus();
+    this._reconnecting = true;
+    try {
+      const src = this.source;
+      if (src && typeof src.ping === "function") {
+        const p = await src.ping({ reconnect: true });
+        if (!p.alive && typeof src.restart === "function") {
+          try {
+            await src.restart();
+          } catch (e) {
+            console.warn("[quote] 重启 QMT 桥失败:", e.message);
+          }
+        }
+      } else if (typeof this._recreateSource === "function") {
+        try {
+          const fresh = await this._recreateSource();
+          if (fresh && fresh !== src && fresh.mode === "qmt") {
+            if (typeof src.dispose === "function") src.dispose();
+            this.source = fresh;
+            this._cache.clear();
+            this._stockList = null;
+            this._stockListPinyin = null;
+            console.log("[quote] 数据源已重建并切换到 QMT");
+          } else if (fresh && typeof fresh.dispose === "function") {
+            // 重建后仍是 mock（QMT 仍不可用），丢弃新实例维持现状
+            fresh.dispose();
+          }
+        } catch (e) {
+          console.warn("[quote] 重建数据源失败:", e.message);
+        }
+      }
+    } finally {
+      this._reconnecting = false;
+    }
+    // 在标志复位后再取状态，避免返回值里残留 reconnecting: true
+    return this.getStatus();
+  }
+
+  /**
+   * 断线自动重连巡检：定时 ping 数据源，未连接则重连。
+   * 仅覆盖 QMT 源的链路自愈；auto 回落 mock 的场景由用户 F5 手动触发重建。
+   */
+  startSupervision(intervalMs = 10000) {
+    if (this._superviseTimer) return;
+    this._superviseTimer = setInterval(async () => {
+      if (this._reconnecting) return;
+      try {
+        if (this.source.mode !== "qmt" || typeof this.source.ping !== "function") return;
+        const s = await this.getStatus();
+        if (!s.connected) {
+          console.warn("[quote] 数据源未连接，自动重连...", s.error || "");
+          await this.reconnect();
+        }
+      } catch (e) {
+        // 巡检异常不影响下一轮
+      }
+    }, intervalMs);
   }
 
   dispose() {
+    if (this._superviseTimer) { clearInterval(this._superviseTimer); this._superviseTimer = null; }
     this._cache.clear();
     this._stockList = null;
     this._stockListPinyin = null;

@@ -23,6 +23,27 @@ const path = require("path");
 const fs2 = require("fs");
 const { app, BrowserWindow, Menu, shell, session } = require("electron");
 
+// ---- 日志落盘：console 输出镜像到 data/logs/main.log（带时间戳）----
+// 排查启动卡死类问题依赖现场，console 关掉就没了，必须落盘
+(function setupFileLogging() {
+  try {
+    const logDir = path.join(__dirname, "data", "logs");
+    fs2.mkdirSync(logDir, { recursive: true });
+    const logFile = path.join(logDir, "main.log");
+    const stream = fs2.createWriteStream(logFile, { flags: "a" });
+    const stamp = () => new Date().toISOString();
+    const origLog = console.log, origWarn = console.warn, origErr = console.error;
+    console.log = (...a) => { origLog(...a); try { stream.write(`[${stamp()}] INFO  ` + a.join(" ") + "\n"); } catch (e) {} };
+    console.warn = (...a) => { origWarn(...a); try { stream.write(`[${stamp()}] WARN  ` + a.join(" ") + "\n"); } catch (e) {} };
+    console.error = (...a) => { origErr(...a); try { stream.write(`[${stamp()}] ERROR ` + a.join(" ") + "\n"); } catch (e) {} };
+    // 主进程未捕获异常也落盘
+    process.on("uncaughtException", (e) => { origErr("[uncaught]", e); try { stream.write(`[${stamp()}] FATAL uncaughtException ${e && e.stack || e}\n`); } catch (_) {} });
+    console.log(`[main] ===== 日志已落盘 ${logFile}，app v${require("./config").version} =====`);
+  } catch (e) {
+    // 日志初始化失败不阻塞启动
+  }
+})();
+
 const { registerIpc } = require("./main/ipc");
 const { QuoteService } = require("./main/services/quote-service");
 const { StrategyService } = require("./main/services/strategy-service");
@@ -126,26 +147,44 @@ app.whenReady().then(async () => {
   const splash = createSplashWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(config); });
 
-  // 后台初始化
+  // 后台初始化（每步打点耗时，卡住时日志可定位到具体节点）
+  const t = async (label, fn) => {
+    const start = Date.now();
+    console.log(`[main] >>> ${label} 开始`);
+    try {
+      const r = await fn();
+      console.log(`[main] <<< ${label} 完成，耗时 ${Date.now() - start}ms`);
+      return r;
+    } catch (e) {
+      console.warn(`[main] <<< ${label} 失败（${Date.now() - start}ms）: ${e && e.message}`);
+      throw e;
+    }
+  };
+
   updateSplash(splash, "初始化行情数据源...", 20);
   console.log("[main] 初始化数据源...");
 
-  const dataSource = await createDataSource({ mode: configManager.dataSource, qmt: configManager.qmt });
+  // tick 推送转发（初始源与重连后重建的源共用）
+  const forwardTick = (data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("quote:tick", data);
+    }
+  };
+
+  const dataSource = await t("初始化行情数据源", () => createDataSource({ mode: configManager.dataSource, qmt: configManager.qmt }));
 
   if (dataSource && typeof dataSource.onPush === "function") {
-    dataSource.onPush("tick", (data) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send("quote:tick", data);
-      }
-    });
+    dataSource.onPush("tick", forwardTick);
   }
   // 策略 bridge：优先复用行情数据源；mock 模式下独立创建（策略 RPC 不依赖 miniQMT）
   let strategyBridge = dataSource;
   if (!dataSource || dataSource.mode !== "qmt" || typeof dataSource.strategyList !== "function") {
     try {
       const { QmtDataSource } = require("./main/datasources/qmt");
-      strategyBridge = new QmtDataSource(config.qmt || {});
-      await strategyBridge.init();
+      strategyBridge = await t("策略 bridge（独立模式）", () => {
+        const q = new QmtDataSource(config.qmt || {});
+        return q.init().then(() => q);
+      });
       console.log("[main] 策略 bridge 已启动（独立模式）");
     } catch (e) {
       console.warn("[main] 策略 bridge 启动失败，策略功能将不可用:", e.message);
@@ -153,7 +192,19 @@ app.whenReady().then(async () => {
     }
   }
 
-  quoteService = new QuoteService({ source: dataSource, cacheTtlMs: config.cache?.ttlMs ?? 5000 });
+  quoteService = new QuoteService({
+    source: dataSource,
+    cacheTtlMs: config.cache?.ttlMs ?? 5000,
+    configuredMode: configManager.dataSource,
+    // 重连用重建工厂：当前源不支持自检（auto 回落 mock）时，按原配置重建并接上 tick 转发
+    recreateSource: async () => {
+      const fresh = await createDataSource({ mode: configManager.dataSource, qmt: configManager.qmt });
+      if (fresh && typeof fresh.onPush === "function") fresh.onPush("tick", forwardTick);
+      return fresh;
+    },
+  });
+  // 断线自动重连巡检（仅 QMT 源）
+  quoteService.startSupervision(10000);
 
   // 预加载股票列表 + 后台同步（不阻塞启动）
   quoteService._ensureStockList().then(async () => {
@@ -170,25 +221,29 @@ app.whenReady().then(async () => {
 
   updateSplash(splash, "初始化交易数据源...", 50);
   backtestService = new BacktestService({ strategyService, config: configManager.qmt });
-  const tradeSource = await createTradeDataSource({ mode: configManager.tradeSource, qmt: configManager.qmt });
+  const tradeSource = await t("初始化交易数据源", () => createTradeDataSource({ mode: configManager.tradeSource, qmt: configManager.qmt }));
   tradeService = new TradeService({ source: tradeSource });
 
   updateSplash(splash, "恢复策略执行...", 75);
   executorService = new ExecutorService({ strategyService, quoteService, tradeService, strategyBridge, modelService });
-  executorService.restoreRunning();
+  await t("恢复策略执行", () => executorService.restoreRunning());
 
   // 启动模型服务（HTTP 子进程）
   updateSplash(splash, "启动模型服务...", 85);
   modelService = new ModelService({ port: (config.modelServer || {}).port || 8765 });
   try {
-    await modelService.init();
+    await t("启动模型服务", () => modelService.init());
     console.log("[main] 模型服务已启动 port=" + modelService.port);
   } catch (e) {
     console.warn("[main] 模型服务启动失败:", e.message);
     modelService = null;
   }
 
-  registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, strategyBridge, modelService, getMainWindow: () => mainWindow });
+  try {
+    registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, strategyBridge, modelService, getMainWindow: () => mainWindow });
+  } catch (e) {
+    console.warn("[main] IPC registration partially failed:", e && e.stack || e);
+  }
 
   updateSplash(splash, "启动完成", 100);
   console.log("[main] 数据源初始化完成，IPC 已注册");

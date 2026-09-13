@@ -158,11 +158,47 @@ def from_xtcode(xtcode):
 # ----------------------------------------------------------------------
 # 业务方法
 # ----------------------------------------------------------------------
-def handle_ping(params):
-    """心跳 + 测试 miniQMT 连接"""
+def _probe_tick():
+    """数据链路探测：拉基准标的实时 tick，验证 miniQMT 真的在服务数据。
+
+    xt.connect() 失败不一定抛异常（仅启动后台连接），所以「连接可用」
+    必须以能否拿到真实数据为准。
+    """
     try:
-        ensure_connected(params.get("port", 58610) if params else 58610)
-        return {"alive": True, "connected": True, "ts": time.time()}
+        xt = ensure_xtquant()
+        import io as _io
+        import contextlib as _ctx
+        with _ctx.redirect_stdout(_io.StringIO()):
+            ticks = xt.get_full_tick(["000001.SH", "600519.SH"]) or {}
+        return any(ticks.get(c) for c in ("000001.SH", "600519.SH"))
+    except Exception:
+        return False
+
+
+def handle_ping(params):
+    """心跳 + 测试 miniQMT 连接
+
+    params:
+      port: int       miniQMT 端口（默认 58610）
+      probe: bool     数据探测：拉一次真实 tick 验证数据链路（状态轮询用）
+      reconnect: bool 强制重置 _CONNECTED 后重新 connect（重连用）
+    """
+    global _CONNECTED
+    params = params or {}
+    port = int(params.get("port", 58610))
+    try:
+        if params.get("reconnect"):
+            _CONNECTED = False
+        ensure_connected(port)
+        result = {"alive": True, "connected": True, "ts": time.time()}
+        if params.get("probe"):
+            if _probe_tick():
+                return result
+            # 探测失败：重置连接标志，下一次调用会重新 connect
+            _CONNECTED = False
+            result["connected"] = False
+            result["error"] = "miniQMT 无数据响应"
+        return result
     except Exception as e:
         return {"alive": True, "connected": False, "error": str(e)}
 

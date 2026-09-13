@@ -11,6 +11,7 @@ const facade = {
     syncStocks: () => ipcRenderer.invoke("quote:syncStocks"),
     stockList: () => ipcRenderer.invoke("quote:stockList"),
     status: () => ipcRenderer.invoke("quote:status"),
+    reconnect: () => ipcRenderer.invoke("quote:reconnect"),
     onTick: (callback) => {
       const handler = (_e, data) => callback(data);
       ipcRenderer.on("quote:tick", handler);
