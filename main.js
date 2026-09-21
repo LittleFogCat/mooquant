@@ -54,12 +54,16 @@ const { ExecutorService } = require("./main/services/executor-service");
 const { ModelService } = require("./main/services/model-service");
 const { createDataSource } = require("./main/datasources");
 const { createTradeDataSource } = require("./main/datasources/trade");
+const { LocalHttpServer } = require("./main/server/local-http-server");
+const { DiscoveryBeacon } = require("./main/server/discovery-beacon");
 
 let mainWindow = null;
 let quoteService = null, strategyService = null, backtestService = null, tradeService = null;
 let configManager = null;
 let executorService = null;
 let modelService = null;
+let localServer = null;
+let discoveryBeacon = null;
 
 function installCspHeader() {
   const csp = [
@@ -206,6 +210,40 @@ app.whenReady().then(async () => {
   // 断线自动重连巡检（仅 QMT 源）
   quoteService.startSupervision(10000);
 
+  // 本地 HTTP 服务：只读数据面暴露到局域网（与 UI 共享同一份 QuoteService 缓存与 QMT 连接）。
+  // 启动失败（端口占用/无权限）只降级本服务，不阻塞应用启动。
+  localServer = new LocalHttpServer({
+    quoteService,
+    config: config.localServer || {},
+    version: require("./config").version,
+  });
+  updateSplash(splash, "启动本地服务...", 30);
+  await t("启动本地 HTTP 服务", () => localServer.start());
+  {
+    const info = localServer.info();
+    if (info.server.listening) {
+      const url = `http://127.0.0.1:${info.server.port}/mooquant/api`;
+      console.log(`[main] 本地服务可用: ${url}  局域网: ${info.addrs.map((a) => `http://${a}:${info.server.port}/mooquant/api`).join(" ")}`);
+    } else {
+      console.warn(`[main] 本地服务不可用: ${info.server.error || localServer.state}`);
+    }
+  }
+
+  // LAN 服务发现：UDP 广播信标（纯 Node dgram，零新依赖）。
+  // 必须晚于 localServer.start()：信标只广播已就绪的监听地址，HTTP 未监听时不广播。
+  // 起不来只降级发现功能，不影响应用其余部分。
+  discoveryBeacon = new DiscoveryBeacon({
+    getInfo: () => localServer.info(),
+    config: (config.localServer || {}).discovery || {},
+    version: require("./config").version,
+  });
+  await t("启动 LAN 服务发现", () => discoveryBeacon.start());
+  {
+    const d = discoveryBeacon.info();
+    if (d.listening) console.log(`[main] 服务发现已就绪 UDP:${d.port}，局域网客户端可探测`);
+    else console.warn(`[main] 服务发现未启动: ${d.error || d.state}`);
+  }
+
   // 预加载股票列表 + 后台同步（不阻塞启动）
   quoteService._ensureStockList().then(async () => {
     const cnt = quoteService._stockList ? quoteService._stockList.length : 0;
@@ -240,7 +278,7 @@ app.whenReady().then(async () => {
   }
 
   try {
-    registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, strategyBridge, modelService, getMainWindow: () => mainWindow });
+    registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, strategyBridge, modelService, localServer, discoveryBeacon, getMainWindow: () => mainWindow });
   } catch (e) {
     console.warn("[main] IPC registration partially failed:", e && e.stack || e);
   }
@@ -257,6 +295,9 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  // 先停止广告，再拆端点：避免客户端在这中间被指向一个已关闭的服务
+  if (discoveryBeacon) Promise.resolve(discoveryBeacon.stop()).catch(() => {});
+  if (localServer) Promise.resolve(localServer.stop()).catch(() => {});
   if (quoteService) quoteService.dispose();
   if (backtestService) backtestService.dispose();
   if (tradeService) tradeService.dispose();

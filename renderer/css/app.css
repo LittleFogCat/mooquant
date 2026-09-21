@@ -120,6 +120,15 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .form-hint{display:inline-flex;align-items:center;justify-content:center;width:12px;height:12px;margin-left:4px;border:1px solid var(--text-3);border-radius:50%;color:var(--text-3);font-size:8px;line-height:1;vertical-align:super;position:relative;transition:var(--transition)}
 .form-hint:hover,.form-hint:focus{color:var(--text-1);border-color:var(--text-2);outline:none}
 .form-hint:hover::after,.form-hint:focus::after{content:attr(data-tip);position:absolute;top:calc(100% + 6px);left:0;z-index:200;width:max-content;max-width:280px;background:var(--bg-1);border:1px solid var(--border-hover);border-radius:var(--radius-sm);padding:8px 10px;font-size:12px;line-height:1.6;color:var(--text-2);box-shadow:var(--shadow-md);white-space:normal;text-align:left;font-weight:400}
+/* 表单字段说明：纯文本提示（区别于上面带气泡的 .form-hint 角标） */
+.form-hint-text{font-size:12px;color:var(--text-3);line-height:1.6;margin-top:6px}
+/* 本地服务 / 服务发现：局域网地址列表 */
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:13px}
+.ls-url-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-1);margin-bottom:6px}
+.ls-url-row:hover{border-color:var(--border-hover)}
+.ls-url{flex:1;min-width:0;overflow-x:auto;white-space:nowrap;color:var(--text-1);user-select:text}
+.ls-url::-webkit-scrollbar{height:4px}
+.ls-copy{flex-shrink:0}
 .radio-group{display:flex;gap:8px}
 .radio-item{display:flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;transition:var(--transition);font-size:14px;color:var(--text-2)}
 .radio-item:hover{background:var(--bg-2);color:var(--text-1)}

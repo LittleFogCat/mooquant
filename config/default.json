@@ -20,5 +20,21 @@
   "tradeSource": "mock",
   "modelServer": {
     "port": 18765
+  },
+  "localServer": {
+    "enabled": true,
+    "host": "0.0.0.0",
+    "port": 12678,
+    "token": "",
+    "cors": "*",
+    "maxBatchCodes": 50,
+    "maxHistoryCount": 5000,
+    "gzip": true,
+    "discovery": {
+      "enabled": true,
+      "port": 12679,
+      "intervalMs": 3000,
+      "directedBroadcast": true
+    }
   }
 }

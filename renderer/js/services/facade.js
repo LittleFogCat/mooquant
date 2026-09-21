@@ -151,6 +151,22 @@ if (window.mookquant && window.mookquant.facade) { return window.mookquant.facad
     get: async () => _settings,
     set: async (patch) => { _settings = { ..._settings, ...patch }; return _settings; },
   };
+  // Mock localServer（浏览器无真实监听，给一组稳定假数据；信封与真 handler 一致：{ok,data}）
+  let _disc = { enabled: true, port: 12679, intervalMs: 3000 };
+  const localServerMock = {
+    info: async () => {
+      const port = 12678, addrs = ["192.168.1.5"];
+      return { ok: true, data: {
+        state: "listening", listening: true, host: "0.0.0.0", port, prefix: "/mooquant/api",
+        addrs, urls: addrs.map(a => `http://${a}:${port}/mooquant/api`),
+        source: "mock", tokenRequired: false, error: null,
+        discovery: { state: _disc.enabled ? "listening" : "disabled", listening: _disc.enabled, port: _disc.port,
+          intervalMs: _disc.intervalMs, broadcastOk: _disc.enabled, targets: _disc.enabled ? ["255.255.255.255"] : [],
+          error: null, magic: "MOOQUANT-DISCOVERY", protocolVersion: 1 },
+      } };
+    },
+    setDiscovery: async (patch) => { _disc = { ..._disc, ...(patch || {}) }; return localServerMock.info(); },
+  };
 
   async function mockHistory(rawSymbol, period, count) {
     let symbol = normalize(rawSymbol);
@@ -189,6 +205,7 @@ if (window.mookquant && window.mookquant.facade) { return window.mookquant.facad
       search: async (q) => ({ ok: true, data: searchStocks(q) }), status: async () => ({ mode: "mock", description: "mock", connected: false }),
       reconnect: async () => ({ mode: "mock", description: "mock", connected: false }) },
     strategy: strategyMock, backtest: backtestMock, trade: tradeMock, settings: settingsMock,
+    localServer: localServerMock,
     modelServer: {
     status: async () => ({ ok: false, data: { ready: false, port: 18765 } }),
     listStrategies: async () => ({ ok: true, data: [] }),

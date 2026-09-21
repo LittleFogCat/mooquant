@@ -87,9 +87,13 @@ class MockDataSource {
     await new Promise(r => setTimeout(r, this._artificialDelayMs));
     const preset = MOCK_TABLE[symbol];
     const si = detectMarket(symbol);
-    let base, name, industry;
-    if (preset) { base = preset.base; name = preset.name; industry = preset.industry; }
-    else { let h = 0; for (let i = 0; i < symbol.length; i++) h = (h * 31 + symbol.charCodeAt(i)) | 0; base = 10 + Math.abs(h % 9900) / 10; name = "未知A股 " + si.code; industry = "-"; }
+    // stocks_cache.json（全量列表）只有 code/name/exchange/type，没有 base；
+    // 此时沿用真实名称，价格基准改由代码哈希派生（稳定但纯模拟）。
+    let name = (preset && preset.name) || ("未知A股 " + si.code);
+    let industry = (preset && preset.industry) || "-";
+    let base;
+    if (preset && Number.isFinite(preset.base)) { base = preset.base; }
+    else { let h = 0; for (let i = 0; i < symbol.length; i++) h = (h * 31 + symbol.charCodeAt(i)) | 0; base = 10 + Math.abs(h % 9900) / 10; }
     const now = new Date(); const tick = Math.floor(now.getTime() / 60000);
     const seed = ((tick * 9301 + 49297) % 233280) / 233280; const drift = (seed - 0.5) * 0.06;
     const price = +(base * (1 + drift)).toFixed(2); const change = +(price - base).toFixed(2);
@@ -105,7 +109,7 @@ class MockDataSource {
     if (!symbol) { const m = searchByName(rawSymbol); if (m.length > 0) symbol = m[0].code; }
     if (!symbol) throw new Error("symbol not found");
     const preset = MOCK_TABLE[symbol];
-    const base = preset ? preset.base : 50;
+    const base = preset && Number.isFinite(preset.base) ? preset.base : 50;
     const n = Math.min(count || 60, 500);
     const bars = [];
     let price = base;

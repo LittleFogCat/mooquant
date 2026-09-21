@@ -1,7 +1,7 @@
 /**
  * mookquant · IPC 路由
  */
-function registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, strategyBridge, modelService, getMainWindow }) {
+function registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, strategyBridge, modelService, localServer, discoveryBeacon, getMainWindow }) {
   const { ipcMain } = require("electron");
   // ---- 行情 ----
   ipcMain.handle("quote:query", async (_e, s) => quoteService.query(s));
@@ -151,6 +151,54 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
     ipcMain.handle("model:purge", async (_e, ids) => { try { return await modelService.purgeModels(ids); } catch (e) { return { ok: false, error: e.message }; } });
     ipcMain.handle("model:emptyTrash", async () => { try { return await modelService.emptyTrash(); } catch (e) { return { ok: false, error: e.message }; } });
     ipcMain.handle("model:order", async (_e, order) => { try { return await modelService.setModelOrder(order); } catch (e) { return { ok: false, error: e.message }; } });
+  }
+  // ---- 本地服务（传输层）----
+  if (localServer) {
+    const { API_PREFIX } = require("../server/local-http-server");
+    const buildInfo = () => {
+      const info = localServer.info();
+      const port = info.server.port; // 实际绑定端口（含 MOOKQUANT_LOCAL_SERVER_PORT 覆盖）
+      const addrs = info.addrs || [];
+      return {
+        state: localServer.state,
+        listening: !!info.server.listening,
+        host: info.server.host,
+        port,
+        prefix: API_PREFIX,
+        addrs,
+        urls: addrs.map((a) => `http://${a}:${port}${API_PREFIX}`),
+        source: info.source,
+        tokenRequired: !!info.tokenRequired,
+        error: info.server.error,
+        discovery: discoveryBeacon ? discoveryBeacon.info() : { state: "absent", listening: false, port: null },
+      };
+    };
+    ipcMain.handle("localServer:info", async () => {
+      try { return { ok: true, data: buildInfo() }; } catch (e) { return { ok: false, error: e.message }; }
+    });
+    ipcMain.handle("localServer:setDiscovery", async (_e, patch) => {
+      try {
+        if (!configManager) return { ok: false, error: "配置管理器不可用" };
+        const curLs = configManager.get().localServer || {};
+        const curDisc = curLs.discovery || {};
+        const p = patch || {};
+        const nextDisc = {
+          enabled: p.enabled === undefined ? curDisc.enabled !== false : !!p.enabled,
+          port: curDisc.port || 12679,
+          intervalMs: curDisc.intervalMs || 3000,
+          directedBroadcast: curDisc.directedBroadcast !== false,
+        };
+        // ConfigManager.set 是浅合并 —— 必须回写整个 localServer 段
+        const nextLs = Object.assign({}, curLs, { discovery: nextDisc });
+        configManager.set({ localServer: nextLs });
+
+        // 只热更新配置，不重启 HTTP 监听（否则会踢掉在线连接、重置 uptime/计数）
+        localServer.applyConfig(nextLs);
+        if (discoveryBeacon) await discoveryBeacon.restart(nextDisc);
+
+        return { ok: true, data: buildInfo() };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
   }
 }
 module.exports = { registerIpc };

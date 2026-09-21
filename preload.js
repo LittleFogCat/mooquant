@@ -64,6 +64,10 @@ const facade = {
     get: () => ipcRenderer.invoke("settings:get"),
     set: (patch) => ipcRenderer.invoke("settings:set", patch),
   },
+  localServer: {
+    info: () => ipcRenderer.invoke("localServer:info"),
+    setDiscovery: (patch) => ipcRenderer.invoke("localServer:setDiscovery", patch),
+  },
   modelServer: {
     status: () => ipcRenderer.invoke("model:status"),
     listStrategies: () => ipcRenderer.invoke("model:strategies"),

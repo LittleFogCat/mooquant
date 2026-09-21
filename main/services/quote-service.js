@@ -19,6 +19,49 @@ class QuoteService {
   _cacheGet(k) { if (this.cacheTtlMs <= 0) return null; const e = this._cache.get(k); if (!e) return null; if (Date.now() - e.ts > this.cacheTtlMs) { this._cache.delete(k); return null; } return e.data; }
   _cacheSet(k, d) { if (this.cacheTtlMs <= 0) return; this._cache.set(k, { data: d, ts: Date.now() }); }
 
+  /**
+   * 批量查询快照：并发扇出 query()，并发上限 4。
+   * 单个标的失败是否影响整体由 skipError 决定；返回顺序与入参一致。
+   * @param {string[]} codes 已归一化的标的代码
+   * @returns {Promise<{ok:boolean, data?:{count:number, quotes:Array, errors:Array}, error?:string}>}
+   */
+  async queryMany(codes, { skipError = true, concurrency = 4 } = {}) {
+    const list = (Array.isArray(codes) ? codes : []).map((c) => String(c || "").trim()).filter(Boolean);
+    if (list.length === 0) return { ok: false, error: "codes 不能为空" };
+
+    const results = new Array(list.length);
+    let cursor = 0;
+    let failed = false;
+    const workers = Math.max(1, Math.min(Number(concurrency) || 4, list.length));
+
+    const worker = async () => {
+      while (!failed && cursor < list.length) {
+        const i = cursor++;
+        const code = list[i];
+        const r = await this.query(code);
+        if (r && r.ok) {
+          results[i] = { ok: true, data: r.data };
+        } else {
+          results[i] = { ok: false, code, error: (r && r.error) || "查询失败" };
+          if (!skipError) failed = true;
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: workers }, worker));
+
+    const quotes = [];
+    const errors = [];
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (!r) continue; // skipError=0 时提前中断，剩余标的未执行
+      if (r.ok) quotes.push(r.data);
+      else errors.push({ code: r.code, msg: r.error });
+    }
+    if (!skipError && errors.length > 0) return { ok: false, error: errors[0].msg };
+    return { ok: true, data: { count: quotes.length, quotes, errors } };
+  }
+
   async query(rawSymbol) {
     const key = this._cacheKey(rawSymbol);
     if (!key) return { ok: false, error: "请输入股票代码或名称" };
@@ -132,11 +175,12 @@ class QuoteService {
   /**
    * 搜索股票（代码 / 名称 / 拼音首字母）
    */
-  async search(query) {
+  async search(query, limit = 20) {
     try {
       await this._ensureStockList();
       const q = (query || "").trim().toLowerCase();
       if (!q) return { ok: true, data: [] };
+      const max = Math.max(1, Number(limit) || 20);
 
       const isDigit = /^\d+$/.test(q);
       const isChinese = /[\u4e00-\u9fa5]/.test(q);
@@ -151,9 +195,53 @@ class QuoteService {
           const py = s._pinyin || "";
           return py.startsWith(q) || py.includes(q) || (s.code || "").toLowerCase().includes(q);
         }
-      }).slice(0, 20).map(s => ({ code: s.code, name: s.name, industry: s.industry || "", type: s.type || "" }));
+      }).slice(0, max).map(s => ({ code: s.code, name: s.name, industry: s.industry || "", type: s.type || "" }));
 
       return { ok: true, data: results };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
+
+  /**
+   * 分页筛选标的列表（不穿透到桥，全部走内存缓存）。
+   * @param {{offset?:number, limit?:number, type?:string|null, exchange?:string|null, q?:string|null}} opts
+   */
+  async listStocks({ offset = 0, limit = 100, type = null, exchange = null, q = null } = {}) {
+    try {
+      await this._ensureStockList();
+      const off = Math.max(0, Number(offset) || 0);
+      const lim = Math.max(0, Number(limit) || 0);
+
+      let filtered = (this._stockListPinyin || []).map(s => ({
+        code: s.code,
+        name: s.name,
+        exchange: String(s.code || "").slice(0, 2).toUpperCase(),
+        type: s.type || "",
+      }));
+      if (type) filtered = filtered.filter(r => r.type === type);
+      if (exchange) {
+        const ex = String(exchange).toUpperCase();
+        filtered = filtered.filter(r => r.exchange === ex);
+      }
+
+      const kw = (q || "").trim().toLowerCase();
+      if (kw) {
+        const isDigit = /^\d+$/.test(kw);
+        const isChinese = /[一-龥]/.test(kw);
+        // 复用 search() 的匹配规则；拼音需回查 _stockListPinyin（上面已丢掉 _pinyin）
+        const pinyinOf = new Map((this._stockListPinyin || []).map(s => [s.code, s._pinyin || ""]));
+        filtered = filtered.filter(r => {
+          if (isDigit) return r.code.replace(/^(sh|sz|bj)/, "").includes(kw) || r.code.includes(kw);
+          if (isChinese) return (r.name || "").includes(kw);
+          const py = pinyinOf.get(r.code) || "";
+          return py.startsWith(kw) || py.includes(kw) || r.code.toLowerCase().includes(kw);
+        });
+      }
+
+      const total = filtered.length;
+      const page = filtered.slice(off, off + lim);
+      return { ok: true, data: { total, offset: off, limit: lim, count: page.length, stocks: page } };
     } catch (e) {
       return { ok: false, error: e.message };
     }
