@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  局域网里的桌面端服务是明文 HTTP，Android 9+ 默认禁止。
+  注意：只从这里放开，不要再在 <application> 上写 android:usesCleartextTraffic ——
+  两者同时存在时 network config 静默生效，会造成「写了却没用」的困惑。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

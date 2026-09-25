@@ -1,0 +1,59 @@
+<resources>
+    <string name="app_name">MooQuantAndroid</string>
+
+    <!-- 行情页 -->
+    <string name="menu_refresh">刷新</string>
+    <string name="menu_add">添加</string>
+    <string name="menu_settings">设置</string>
+    <string name="status_not_configured">未发现服务器，点此设置</string>
+    <string name="status_discovering">正在搜索局域网内的服务…</string>
+    <string name="status_refreshing">正在刷新…</string>
+    <string name="status_updated">更新于 %1$s</string>
+    <string name="source_qmt">QMT</string>
+    <string name="source_mock">Mock</string>
+    <string name="token_required_hint">服务端需要 token，请到设置页填写</string>
+    <string name="empty_watchlist">自选为空\n点右上角「添加」搜索标的</string>
+    <string name="empty_no_server">尚未连接服务器\n点上方状态栏填写服务地址</string>
+    <string name="quote_placeholder">--</string>
+
+    <!-- 删除确认 -->
+    <string name="delete_title">移除自选</string>
+    <string name="delete_message">确定把「%1$s」从自选中移除吗？</string>
+    <string name="delete_confirm">移除</string>
+    <string name="cancel">取消</string>
+
+    <!-- 添加标的 -->
+    <string name="add_title">添加自选</string>
+    <string name="add_hint">代码 / 名称 / 拼音首字母</string>
+    <string name="add_empty">输入关键词开始搜索</string>
+    <string name="add_no_result">没有匹配的标的</string>
+    <string name="add_search_failed">搜索失败：%1$s</string>
+    <string name="add_added">已添加 %1$s</string>
+    <string name="add_duplicate">%1$s 已在自选中</string>
+
+    <!-- 设置 -->
+    <string name="settings_title">设置</string>
+    <string name="settings_server_section">服务地址</string>
+    <string name="settings_api_base_hint">http://192.168.1.5:12678/mooquant/api</string>
+    <string name="settings_discover">自动发现</string>
+    <string name="settings_discovering">搜索中…</string>
+    <string name="settings_test">测试连接</string>
+    <string name="settings_testing">测试中…</string>
+    <string name="settings_discover_ok">已发现：%1$s</string>
+    <string name="settings_discover_fail">未发现服务，请确认电脑端已启动且在同一局域网</string>
+    <string name="settings_test_ok">连接成功 · 数据源 %1$s</string>
+    <string name="settings_test_fail">连接失败：%1$s</string>
+    <string name="settings_token_hint">Token（服务端未开启鉴权时留空）</string>
+    <string name="settings_display_section">显示</string>
+    <string name="settings_color_scheme">涨跌配色</string>
+    <string name="settings_red_up">红涨绿跌</string>
+    <string name="settings_green_up">绿涨红跌</string>
+    <string name="settings_refresh_interval">刷新间隔</string>
+    <string name="settings_refresh_1s">1 秒</string>
+    <string name="settings_refresh_3s">3 秒</string>
+    <string name="settings_refresh_5s">5 秒</string>
+    <string name="settings_refresh_10s">10 秒</string>
+    <string name="settings_watchlist_section">自选</string>
+    <string name="settings_reset_watchlist">恢复默认自选</string>
+    <string name="settings_reset_done">已恢复默认自选</string>
+</resources>

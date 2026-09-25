@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 涨跌色：同一对颜色在两种配色方案间互换 -->
+    <color name="quote_up_red">#E53935</color>
+    <color name="quote_down_green">#43A047</color>
+    <color name="quote_flat">#9E9E9E</color>
+</resources>
