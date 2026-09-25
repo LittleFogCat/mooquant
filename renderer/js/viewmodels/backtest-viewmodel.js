@@ -47,10 +47,13 @@ class BacktestViewModel {
       compareSel: {},
       comparison: null,
       running: false,
+      progress: null,
       result: null,
       error: null,
     };
     this._subs = [];
+    this._unsubProgress = null;
+    this._progressSubscribed = false;
   }
 
   _loadConfig() {
@@ -96,6 +99,26 @@ class BacktestViewModel {
     this._subs.push(fn);
     fn(this.state);
     return () => { this._subs = this._subs.filter((f) => f !== fn); };
+  }
+
+  /** 订阅回测进度推送（幂等；由 Router.onEnter 进入本页时调用） */
+  subscribeProgress() {
+    if (this._progressSubscribed) return;
+    if (!this.facade.backtest || typeof this.facade.backtest.onProgress !== "function") return;
+    this._progressSubscribed = true;
+    // 浏览器 mock 分支不返回退订函数，兜底为 null
+    this._unsubProgress = this.facade.backtest.onProgress((p) => {
+      if (p) this._set({ progress: p });
+    }) || null;
+  }
+
+  /** 退订（幂等；由 Router.onLeave 离开本页时调用，避免后台刷进度） */
+  unsubscribeProgress() {
+    if (this._unsubProgress) {
+      try { this._unsubProgress(); } catch (e) { /* 渲染进程已销毁等 */ }
+    }
+    this._unsubProgress = null;
+    this._progressSubscribed = false;
   }
 
   _set(patch) {
@@ -204,7 +227,7 @@ class BacktestViewModel {
     if (!s.startDate || !s.endDate) { this._set({ error: "请选择回测时间范围" }); return; }
 
     this._saveConfig();
-    this._set({ running: true, error: null, result: null });
+    this._set({ running: true, progress: null, error: null, result: null });
     try {
       const resp = await this.facade.backtest.run({
         strategyId: s.selectedId,
@@ -237,10 +260,10 @@ class BacktestViewModel {
         // D4.2 稳健性分析
         robustness: !!s.robustness,
       });
-      if (!resp.ok) { this._set({ running: false, error: this._humanizeError(resp.error) }); return; }
-      this._set({ running: false, result: resp.data });
+      if (!resp.ok) { this._set({ running: false, progress: null, error: this._humanizeError(resp.error) }); return; }
+      this._set({ running: false, progress: null, result: resp.data });
     } catch (e) {
-      this._set({ running: false, error: this._humanizeError(e.message) });
+      this._set({ running: false, progress: null, error: this._humanizeError(e.message) });
     }
   }
 }

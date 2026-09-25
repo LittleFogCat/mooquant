@@ -95,6 +95,8 @@ safe('回测页', () => {
   pageVM.backtest = backtestVM;
   BacktestView.render(document.getElementById("backtestContainer"), backtestVM);
   Router.onEnter("backtest", () => backtestVM.loadStrategies());
+  // 订阅必须每次进入本页时重建：onLeave 会退订，只在 render() 里订阅会导致离开一次后永久失效
+  Router.onEnter("backtest", () => backtestVM.subscribeProgress());
   Router.onLeave("backtest", () => backtestVM.unsubscribeProgress());
 });
 

@@ -617,8 +617,7 @@ import { getThemeColors } from '../utils/chart-theme.js';
       renderEquityCurve(state.result ? state.result.equityCurve : null, state.result ? state.result.trades : null);
       renderKlineChart(state.result ? state.result.bars : null, state.result ? state.result.trades : null, vm);
     }
-    // 订阅回测进度（离开页面时由 Router onLeave 清理）
-    vm.subscribeProgress();
+    // 进度订阅由 Router.onEnter/onLeave 管理，见 renderer/js/main.js（render 只在启动时跑一次）
     vm.loadHistory();
     vm.subscribe(paint);
   }
