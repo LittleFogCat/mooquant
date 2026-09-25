@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""mooquant 命令行入口。
+
+把 `linux/` 挂进 `sys.path` 后转交 `mooquant.cli`，这样源码目录不必安装、
+也不用设 PYTHONPATH，软链到 PATH 里就能直接用。
+"""
+
+import os
+import sys
+
+# realpath 不能省：装完之后这个文件是通过 ~/.local/bin 下的软链调用的，
+# 用 __file__ 会算出软链所在的目录，就导不到 mooquant 包了。
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
+from mooquant.cli import main  # noqa: E402  必须在 sys.path 调整之后
+
+if __name__ == "__main__":
+    sys.exit(main())
