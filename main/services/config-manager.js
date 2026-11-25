@@ -48,6 +48,8 @@ class ConfigManager {
       minOrderIntervalMs: Number(a.minOrderIntervalMs) > 0 ? Number(a.minOrderIntervalMs) : 30000,
       tickMs: Number(a.tickMs) > 0 ? Number(a.tickMs) : 15000,
       schedTickMs: Number(a.schedTickMs) > 0 ? Number(a.schedTickMs) : 20000,
+      dailyCallBudget: Number(a.dailyCallBudget) > 0 ? Number(a.dailyCallBudget) : 300,
+      reserveForStopLoss: Number(a.reserveForStopLoss) >= 0 ? Number(a.reserveForStopLoss) : 100,
       calendarOverrides: a.calendarOverrides || {},
     };
   }

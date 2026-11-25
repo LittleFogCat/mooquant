@@ -63,6 +63,47 @@ import { escapeHtml, fmtNum, cls } from '../utils/format.js';
     `;
   }
 
+  /** 今日表现卡片：成交/信号/额度/异常（数据来自日终报告 + 实时额度计数，不额外调接口） */
+  function renderTodayCard(state) {
+    const rep = state.report;
+    const q = state.quota;
+    if (!rep && !q) return "";
+    const orders = rep ? rep.orders || 0 : 0;
+    const signals = rep ? rep.signals || 0 : 0;
+    const errors = rep ? (rep.errors || []).length : 0;
+
+    let quotaText = "不限";
+    let quotaHint = "未配置每日调用预算";
+    if (q && q.limit > 0) {
+      quotaText = q.used + " / " + q.limit;
+      quotaHint = q.openAllowed
+        ? "额度充足，可正常开仓"
+        : q.closeAllowed
+        ? "余量不足，仅允许平仓/止损"
+        : "额度已用尽，今日禁止下单";
+    }
+    const warn = (q && q.limit > 0 && !q.openAllowed) || errors > 0;
+    const foot = rep && rep.generatedAt
+      ? "报告生成于 " + fmtTime(rep.generatedAt)
+      : "日终报告将在 15:05 自动生成";
+
+    const cell = (label, value) =>
+      '<div class="stat-card"><div class="stat-label">' + label + '</div><div class="stat-value">' + value + '</div></div>';
+
+    return `
+      <div class="card">
+        <div class="card-title">今日表现${warn ? ' <span class="badge badge-error">需关注</span>' : ""}</div>
+        <div class="stats-grid">
+          ${cell("成交笔数", orders + " 笔")}
+          ${cell("策略信号", signals + " 次")}
+          ${cell("接口额度", quotaText)}
+          ${cell("异常", errors + " 条")}
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:var(--text-3)">${escapeHtml(quotaHint)} · ${escapeHtml(foot)}</div>
+      </div>
+    `;
+  }
+
   function renderPositions(state) {
     const positions = state.positions || [];
     if (!positions.length) return '<div class="card"><div class="card-title">持仓</div><div class="empty-state"><div class="empty-state-text">无持仓</div></div></div>';
@@ -127,6 +168,7 @@ import { escapeHtml, fmtNum, cls } from '../utils/format.js';
     var searchCtrl = null;
     function paint(state) {
       root.innerHTML =
+        renderTodayCard(state) +
         renderOrderForm(state, vm) +
         renderAccount(state) +
         renderPositions(state) +

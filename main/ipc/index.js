@@ -3,7 +3,7 @@
  */
 const { TradingScheduler } = require("../services/trading-scheduler");
 
-function registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, tradingScheduler, strategyBridge, modelService, localServer, discoveryBeacon, getMainWindow }) {
+function registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, tradingScheduler, reportService, strategyBridge, modelService, localServer, discoveryBeacon, getMainWindow }) {
   const { ipcMain } = require("electron");
   // ---- 行情 ----
   ipcMain.handle("quote:query", async (_e, s) => quoteService.query(s));
@@ -110,6 +110,7 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
     ipcMain.handle("trade:positions", async () => tradeService.getPositions());
     ipcMain.handle("trade:orders", async () => tradeService.getOrders());
     ipcMain.handle("trade:account", async () => tradeService.getAccount());
+    ipcMain.handle("quota:status", async () => ({ ok: true, data: tradeService.getQuota() }));
   }
   // ---- 策略执行 ----
   if (executorService) {
@@ -128,6 +129,13 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
       },
     }));
     ipcMain.handle("scheduler:events", async () => ({ ok: true, data: TradingScheduler.EVENTS }));
+  }
+  // ---- 日终报告 ----
+  if (reportService) {
+    ipcMain.handle("report:today", async () => ({ ok: true, data: await reportService.today() }));
+    ipcMain.handle("report:get", async (_e, date) => ({ ok: true, data: reportService.read(date) }));
+    ipcMain.handle("report:list", async (_e, limit) => ({ ok: true, data: reportService.list(limit) }));
+    ipcMain.handle("report:generate", async (_e, date) => reportService.generate(date));
   }
   // ---- 日志查询 ----
   {

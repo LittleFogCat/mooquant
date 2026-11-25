@@ -1,20 +1,85 @@
 /**
  * mookquant · Trade Service（主进程）
  *
- * 交易编排：下单/撤单/查询 + 下单前风控 + 交易记录持久化。
+ * 交易编排：下单/撤单/查询 + 下单前风控 + 接口额度守门 + 交易记录持久化。
+ *
+ * 额度守门的意义：东财妙想模拟组合每天只有 1000 次调用额度，用尽后连止损都下不出去。
+ * 所以在这里（唯一的交易出口）计数，并区分「开仓」与「平仓」：
+ * 额度逼近上限时先停开仓，把剩余额度留给止损/平仓。
  */
 
 const { LogService } = require("./log-service");
 
+/** 本地日期 YYYY-MM-DD（与日志/报告文件口径一致） */
+function ymdLocal(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return y + "-" + m + "-" + day;
+}
+
 class TradeService {
-  constructor({ source }) {
+  /**
+   * @param {object} deps
+   * @param {object} deps.source 交易数据源
+   * @param {object} [deps.quota] { dailyCallBudget, reserveForStopLoss }
+   */
+  constructor({ source, quota }) {
     this.source = source;
     this._log = new LogService();
     this._dailyTradeCount = {}; // dateStr -> count
+    const q = quota || {};
+    this._quotaCfg = {
+      dailyCallBudget: Number(q.dailyCallBudget) > 0 ? Number(q.dailyCallBudget) : 0,
+      reserveForStopLoss: Number(q.reserveForStopLoss) > 0 ? Number(q.reserveForStopLoss) : 0,
+    };
+    this._calls = 0;
+    this._callsDate = ymdLocal();
   }
 
   _todayKey() {
-    return new Date().toISOString().slice(0, 10);
+    return ymdLocal();
+  }
+
+  /** 每次真正打到数据源的调用都记一笔（失败的请求同样消耗额度） */
+  _trackCall() {
+    const today = this._todayKey();
+    if (today !== this._callsDate) {
+      this._callsDate = today;
+      this._calls = 0;
+    }
+    this._calls++;
+  }
+
+  /** 统一出口：计数 + 调用 */
+  async _call(method, ...args) {
+    this._trackCall();
+    return this.source[method](...args);
+  }
+
+  /**
+   * 当前额度状态
+   * limit=0 表示未启用守门（mock/QMT 无硬性额度）
+   */
+  getQuota() {
+    const limit = this._quotaCfg.dailyCallBudget;
+    const reserve = Math.min(this._quotaCfg.reserveForStopLoss, limit);
+    if (this._todayKey() !== this._callsDate) {
+      this._calls = 0;
+      this._callsDate = this._todayKey();
+    }
+    const openThreshold = limit > 0 ? limit - reserve : 0;
+    return {
+      date: this._callsDate,
+      used: this._calls,
+      limit,
+      reserve,
+      remaining: limit > 0 ? Math.max(0, limit - this._calls) : null,
+      openBudget: limit > 0 ? openThreshold : null,
+      openAllowed: limit <= 0 || this._calls < openThreshold,
+      closeAllowed: limit <= 0 || this._calls < limit,
+      usedRatio: limit > 0 ? +(this._calls / limit).toFixed(4) : 0,
+    };
   }
 
   /**
@@ -50,9 +115,9 @@ class TradeService {
     // 3. 最大持仓比例
     if (risk.maxPositionRatio && risk.maxPositionRatio > 0 && order.side === "buy") {
       try {
-        const account = await this.source.getAccount();
-        const positions = await this.source.getPositions();
-        const totalAssets = account.totalAssets || account.totalAssets || 0;
+        const account = await this._call("getAccount");
+        const positions = await this._call("getPositions");
+        const totalAssets = account.totalAssets || 0;
         if (totalAssets > 0) {
           const existing = (positions || []).find(
             (p) => p.symbol === order.symbol
@@ -89,6 +154,20 @@ class TradeService {
       return { ok: false, error: "限价单价格必须大于 0" };
     }
 
+    // 额度守门：额度紧张时先停开仓，把余量留给平仓/止损
+    const quota = this.getQuota();
+    if (!quota.closeAllowed) {
+      const msg = "交易接口额度已用尽（" + quota.used + "/" + quota.limit + "），今日不再下单";
+      this._log.logTrade({ type: "rejected", symbol: order.symbol, side: order.side, quantity: order.quantity, reason: msg });
+      return { ok: false, error: msg };
+    }
+    if (order.side === "buy" && !quota.openAllowed) {
+      const msg =
+        "额度余量不足（已用 " + quota.used + "，为平仓预留 " + quota.reserve + "），今日禁止开仓";
+      this._log.logTrade({ type: "rejected", symbol: order.symbol, side: order.side, quantity: order.quantity, reason: msg });
+      return { ok: false, error: msg };
+    }
+
     // 风控检查
     const riskResult = await this._riskCheck(order);
     if (!riskResult.passed) {
@@ -104,7 +183,7 @@ class TradeService {
     }
 
     try {
-      const result = await this.source.placeOrder(order);
+      const result = await this._call("placeOrder", order);
 
       // 交易计数 +1
       const today = this._todayKey();
@@ -138,7 +217,7 @@ class TradeService {
 
   async cancelOrder(orderId) {
     try {
-      const result = await this.source.cancelOrder(orderId);
+      const result = await this._call("cancelOrder", orderId);
       this._log.logTrade({
         type: "cancel",
         orderId: orderId,
@@ -152,7 +231,7 @@ class TradeService {
 
   async getPositions() {
     try {
-      const data = await this.source.getPositions();
+      const data = await this._call("getPositions");
       return { ok: true, data };
     } catch (e) {
       return { ok: false, error: e.message };
@@ -161,7 +240,7 @@ class TradeService {
 
   async getOrders() {
     try {
-      const data = await this.source.getOrders();
+      const data = await this._call("getOrders");
       return { ok: true, data };
     } catch (e) {
       return { ok: false, error: e.message };
@@ -170,7 +249,7 @@ class TradeService {
 
   async getAccount() {
     try {
-      const data = await this.source.getAccount();
+      const data = await this._call("getAccount");
       return { ok: true, data };
     } catch (e) {
       return { ok: false, error: e.message };

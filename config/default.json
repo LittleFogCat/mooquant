@@ -47,6 +47,8 @@
     "minOrderIntervalMs": 30000,
     "tickMs": 15000,
     "schedTickMs": 20000,
+    "dailyCallBudget": 300,
+    "reserveForStopLoss": 100,
     "calendarOverrides": {}
   }
 }

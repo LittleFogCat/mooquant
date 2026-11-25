@@ -84,6 +84,9 @@ main/datasources/trade/index.js（工厂）
 - 新账号默认**休眠**，被压到 **10 次/天**，报错：`113 调用次数已达上限，账户已进入休眠状态`。
 - 解除休眠：`POST /skill/activate`（网页接口，无需 App），`GET /skill/hibernate-status` 可查 `dormant`。
 - 适配器对读接口（positions/orders/account）做了 **5 秒 TTL 缓存**，避免策略 tick 打穿额度。
+- 应用层再加一道 **额度守门**（v0.1.43，`trade-service.js`）：所有 `source.*` 调用统一计数，
+  每天 `autoTrade.dailyCallBudget`（默认 300）为上限，其中 `reserveForStopLoss`（默认 100）只留给平仓；
+  余量不足时禁止开仓、只允许平仓，用尽后全部拒绝并写 `rejected` 流水。详见 `08-ops/0801-unattended-trading.md`。
 
 ### 已知限制
 

@@ -144,6 +144,14 @@ if (window.mookquant && window.mookquant.facade) { return window.mookquant.facad
     getPositions: async () => ({ ok: true, data: _tPos }),
     getOrders: async () => ({ ok: true, data: _tOrders.slice(0, 50) }),
     getAccount: async () => { const mv = _tPos.reduce((s, p) => s + p.quantity * p.currentPrice, 0); const pnl = _tPos.reduce((s, p) => s + (p.currentPrice - p.costPrice) * p.quantity, 0); return { ok: true, data: { totalAssets: _tCash + mv, available: _tCash, marketValue: mv, totalPnl: pnl } }; },
+    quota: async () => ({ ok: true, data: { date: new Date().toISOString().slice(0, 10), used: 6, limit: 300, reserve: 100, remaining: 294, openAllowed: true, closeAllowed: true, usedRatio: 0.02 } }),
+  };
+  // Mock 日终报告（浏览器演示用，字段与主进程一致）
+  const reportMock = {
+    today: async () => ({ ok: true, data: { date: new Date().toISOString().slice(0, 10), generatedAt: null, orders: 0, signals: 0, errors: [] } }),
+    get: async () => ({ ok: true, data: null }),
+    list: async () => ({ ok: true, data: [] }),
+    generate: async () => ({ ok: true, data: {} }),
   };
   // Mock settings
   let _settings = { dataSource: "mock", tradeSource: "mock" };
@@ -235,6 +243,7 @@ if (window.mookquant && window.mookquant.facade) { return window.mookquant.facad
   app: { info: async () => ({ name: "mookquant", version: "0.2.0", platform: "browser" }), restart: async () => { location.reload(); } },
     executor: executorMock,
     scheduler: schedulerMock,
+    report: reportMock,
     logs: logsMock,
   };
 }

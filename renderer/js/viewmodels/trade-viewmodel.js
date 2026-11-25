@@ -20,6 +20,8 @@ class TradeViewModel {
       },
       loading: false,
       error: null,
+      report: null,   // 今日日终报告（15:05 生成，未生成时为 null）
+      quota: null,    // 交易接口额度占用
     };
     this._subs = [];
   }
@@ -46,17 +48,21 @@ class TradeViewModel {
   async loadAll() {
     this._set({ loading: true, error: null });
     try {
-      const [info, account, positions, orders] = await Promise.all([
+      const [info, account, positions, orders, report, quota] = await Promise.all([
         this.facade.trade.info(),
         this.facade.trade.getAccount(),
         this.facade.trade.getPositions(),
         this.facade.trade.getOrders(),
+        this.facade.report ? this.facade.report.today() : Promise.resolve({ ok: false }),
+        this.facade.trade.quota ? this.facade.trade.quota() : Promise.resolve({ ok: false }),
       ]);
       this._set({
         info: info.ok ? info.data : null,
         account: account.ok ? account.data : null,
         positions: positions.ok ? positions.data : [],
         orders: orders.ok ? orders.data : [],
+        report: report && report.ok ? report.data : null,
+        quota: quota && quota.ok ? quota.data : null,
         loading: false,
       });
     } catch (e) {

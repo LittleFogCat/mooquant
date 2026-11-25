@@ -58,6 +58,13 @@ const facade = {
     getPositions: () => ipcRenderer.invoke("trade:positions"),
     getOrders: () => ipcRenderer.invoke("trade:orders"),
     getAccount: () => ipcRenderer.invoke("trade:account"),
+    quota: () => ipcRenderer.invoke("quota:status"),
+  },
+  report: {
+    today: () => ipcRenderer.invoke("report:today"),
+    get: (date) => ipcRenderer.invoke("report:get", date),
+    list: (limit) => ipcRenderer.invoke("report:list", limit),
+    generate: (date) => ipcRenderer.invoke("report:generate", date),
   },
   logs: {
     trades: (date) => ipcRenderer.invoke("logs:trades", date),

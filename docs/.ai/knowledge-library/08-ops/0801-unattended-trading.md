@@ -126,25 +126,80 @@ canPlaceOrder(now) {
   "minOrderIntervalMs": 30000,
   "tickMs": 15000,
   "schedTickMs": 20000,
+  "dailyCallBudget": 300,
+  "reserveForStopLoss": 100,
   "calendarOverrides": {}
 }
 ```
 
 - `tickMs`：执行器定时器间隔（只做本地判断，与接口调用无关）
 - `schedTickMs`：调度器比对间隔
+- `dailyCallBudget` / `reserveForStopLoss`：交易接口每日调用预算与为平仓预留的份数（0 = 不启用守门）
 - `enabled=false`：只算信号不下单（演练）；调度器仍会跑，界面照常显示状态
 
 ## 状态可见性
 
 - IPC：`scheduler:status` / `scheduler:events`（`preload.js` → `facade.scheduler`）
-- 界面：策略页顶部状态条 —— `空闲/盘前/交易中/午休/尾盘/结算` · 是否交易日 · 下一时点 · 日历来源与更新时间和交易日数
+- 界面：
+  - 策略页顶部状态条 —— `空闲/盘前/交易中/午休/尾盘/结算` · 是否交易日 · 下一时点 · 日历来源与更新时间和交易日数
+  - 交易页「今日表现」卡片 —— 今日成交笔数 / 策略信号次数 / 接口额度占用 / 异常条数 / 报告生成时间
 - 每个运行中策略的副标题显示 `调度：日线 09:31 / 14:55（下次 14:55）` 与跳过原因
 - 日志：`data/logs/scheduler.log`（只在 `start()` 之后写，单测手动 tick 不会污染）
+
+## 额度守门（`trade-service.js`）
+
+东财妙想模拟组合每天 **1000 次**调用额度，用尽后连止损都下不出去。因此在**唯一交易出口** `TradeService` 计数：
+
+- 所有 `source.*` 调用统一走 `_call()`：先计数再调用（失败的请求同样消耗额度）；
+- 计数按本地自然日重置；
+- `getQuota()` 返回 `{used, limit, reserve, remaining, openAllowed, closeAllowed, usedRatio}`；
+- 分级策略：
+  - `used < limit - reserve` → 正常（可开可平）
+  - `limit - reserve ≤ used < limit` → **禁止开仓**，只允许平仓/撤单/止损
+  - `used ≥ limit` → 全部禁止，界面红字告警
+- 被拦下的委托会以 `type: "rejected"` 写入 `data/trades/{date}.json`，进日报的 `rejects`。
+
+`limit = 0` 表示不启用守门（mock / QMT 无硬性额度）。
+
+预算按日线策略实测：一天约 6~20 次（盘前体检 + 2 个信号点 + 日终报告），300 的预算留了 15 倍余量，
+其中 100 份专门留给尾盘异常平仓。
+
+## 日终报告（`report-service.js`）
+
+`settle` 事件（15:05）触发 `ReportService.generate()`，落盘 `data/reports/{YYYY-MM-DD}.json`：
+
+```json
+{
+  "date": "2026-11-25",
+  "account": { "totalAssets": 1000001.97, "available": 996456.97, "marketValue": 3527,
+               "pnl": 1.97, "pnlPct": 0.0002, "nav": 1.000002 },
+  "trades": [{ "orderId": "...", "symbol": "sz000001", "side": "buy", "price": 12.3,
+               "quantity": 100, "status": "filled", "strategyId": "st_x", "time": "..." }],
+  "positions": [{ "symbol": "sz000001", "quantity": 200, "cost": 12.345, "pnlPct": -0.45 }],
+  "signals": 2, "orders": 1, "cancels": 0, "rejects": 0,
+  "strategies": [{ "name": "无人值守演示", "signals": 2, "polls": 1601,
+                   "schedule": "日线 09:31 / 14:55", "lastFireKey": "2026-11-25#14:55" }],
+  "skips": [{ "strategy": "无人值守演示", "reason": "等待调度时点（日线 09:31 / 14:55）" }],
+  "quota": { "used": 7, "limit": 300, "reserve": 100 },
+  "errors": []
+}
+```
+
+设计要点：
+
+- **只读聚合**：账户 1 次 + 持仓 1 次，其余全读本地日志/内存状态，避免为了出报告再烧额度；
+- **失败不缺席**：接口挂了照样生成报告，把原因塞进 `errors`（报告缺失比数据不全更糟）；
+- `nav = totalAssets / (totalAssets - totalPnl)`，即用当前净值倒推初始资产；
+- `skips` / `strategies.polls` 是回答「今天为什么没交易」的关键字段；
+- IPC：`report:today` / `report:get` / `report:list` / `report:generate`。
+
+**坑**：`LogService` 与 `ReportService` 的日期口径必须都是**本地日期**（原先用 `toISOString().slice(0,10)` 是 UTC，
+在 00:00-08:00 之间会串到前一天），否则日报会读不到当天的成交流水。
 
 ## 单测
 
 ```bash
-node tests/node/run.js            # 全部（38 例）
+node tests/node/run.js            # 全部（45 例）
 node tests/node/run.js scheduler  # 只跑调度器
 node tests/node/run.js full-day   # 只跑全流程模拟
 ```
@@ -155,6 +210,7 @@ node tests/node/run.js full-day   # 只跑全流程模拟
 | `test-strategy-timing.js` | 三类调度解析、日线一天 2 次、补跑只补一次、1m/30m bar 边界、下次时点 |
 | `test-trading-scheduler.js` | 七时点事件序列、去重、重启补跑、非交易日、放行边界、跨日重置、异常隔离 |
 | `test-executor-gating.js` | 执行器三道闸门（Mock 时间驱动 `_isDue` / `_isTradingAllowed`） |
+| `test-quota-report.js` | 额度分级拦截（开仓/平仓/用尽）、失败调用也计数、日终报告聚合与落盘 |
 | `test-full-day.js` | **全流程**：虚拟时钟 08:50→15:30 每 15s 步进，真实模块接线，行情/账户全用桩 |
 
 **全流程模拟**是验收「日线策略一天只算 2 次」最直接的方式（也是唯一不依赖真实等待的验证手段）：
@@ -194,6 +250,28 @@ node tests/node/run.js full-day   # 只跑全流程模拟
 
 整日 `tickCount = 2`、`pollCount = 1601`（每 15s 一次本地判断），**没有一次多余信号计算**。
 
-> 说明：09:15/09:30 的窗口内实时观察未能完成——Agent 当前进程上下文里启动 Electron 会被宿主的文件沙箱拒绝写入
-> （`EPERM: operation not permitted`，且 Chromium 自身沙箱初始化失败需 `--no-sandbox`），属于环境限制，
-> 不是应用缺陷。人工在桌面终端执行 `npm start` 即可看到同样的时点事件。
+**窗口内实时实测**（09:12 启动，用 CDP 抓取状态而不是看日志，因为该次启动受宿主沙箱限制无法写文件）：
+
+```json
+09:15:12  {"state":"pre","fired":["pre_open"],"next":"2026-11-25 09:30",
+           "preflight":{"ok":true,"quote":{"mode":"eastmoney","connected":true},
+                        "account":{"totalAssets":1000001.97,"available":996456.97}}}
+09:32:22  {"state":"open","fired":["pre_open","market_open"],"next":"2026-11-25 11:30"}
+          executor: {"tick":1,"poll":80,"signal":"hold",
+                     "fired":"2026-11-25#09:31","next":{"at":"14:55"}}
+```
+
+即：09:15 盘前体检（行情已连接、账户可查）、09:30 开盘事件、09:31 只用一次信号计算，
+下一次时点正确指向 14:55。
+
+**日终报告真机验证**：用真实东财模拟账户跑 `ReportService.generate()`，落地 `data/reports/2026-11-25.json`：
+
+```
+总资产 999,951.97（可用 996,456.97 / 市值 3,495） 净值 0.999952 盈亏 -48.04
+持仓 2 只（平安银行 200@12.345 -1.26%、浦发银行 100@10.74 -1.58%）
+信号 1 次 / 委托 0 笔 / 额度 2-300 / 异常 0
+```
+
+> 说明：09:15/09:30 的窗口内实时观察是通过 CDP 读状态完成的——Agent 当前进程上下文里启动 Electron
+> 会被宿主的文件沙箱拒绝写入（`EPERM: operation not permitted`，且 Chromium 自身沙箱初始化失败需 `--no-sandbox`），
+> 属于环境限制，不是应用缺陷。人工在桌面终端执行 `npm start` 即可看到同样的时点事件与落盘日志。

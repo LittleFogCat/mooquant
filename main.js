@@ -53,6 +53,7 @@ const { ConfigManager } = require("./main/services/config-manager");
 const { ExecutorService } = require("./main/services/executor-service");
 const { TradingCalendar } = require("./main/services/trading-calendar");
 const { TradingScheduler } = require("./main/services/trading-scheduler");
+const { ReportService } = require("./main/services/report-service");
 const { ModelService } = require("./main/services/model-service");
 const { createDataSource } = require("./main/datasources");
 const { createTradeDataSource } = require("./main/datasources/trade");
@@ -65,6 +66,7 @@ let configManager = null;
 let executorService = null;
 let tradingCalendar = null;
 let tradingScheduler = null;
+let reportService = null;
 let modelService = null;
 let localServer = null;
 let discoveryBeacon = null;
@@ -264,7 +266,8 @@ app.whenReady().then(async () => {
   updateSplash(splash, "初始化交易数据源...", 50);
   backtestService = new BacktestService({ strategyService, config: configManager.qmt });
   const tradeSource = await t("初始化交易数据源", () => createTradeDataSource({ mode: configManager.tradeSource, qmt: configManager.qmt, eastmoney: configManager.eastmoney }));
-  tradeService = new TradeService({ source: tradeSource });
+  // 额度守门配置来自 autoTrade 块：日调用预算 + 为平仓预留的份数
+  tradeService = new TradeService({ source: tradeSource, quota: configManager.autoTrade });
 
   updateSplash(splash, "加载交易日历...", 70);
   // 交易日历：拉不到就降级为「仅周一~周五」，不阻塞启动
@@ -280,11 +283,25 @@ app.whenReady().then(async () => {
     tradingCalendar,
   });
 
+  // 日终报告服务：只读聚合，15:05 由调度器 settle 事件触发
+  reportService = new ReportService({
+    tradeService,
+    getExecutorStatuses: () => executorService.listRunning().data,
+  });
+
   // 调度器：只发事件、不放行下单；执行器每次 tick 向它确认窗口
   tradingScheduler = new TradingScheduler({
     calendar: tradingCalendar,
     autoTrade: configManager.autoTrade,
-    onEvent: (name, payload) => executorService.onTradingEvent(name, payload),
+    onEvent: async (name, payload) => {
+      const r = await executorService.onTradingEvent(name, payload);
+      // 日终结算：出报告（失败只记日志，不影响次日）
+      if (name === "settle") {
+        const rep = await reportService.generate(payload && payload.date);
+        if (!rep.ok) console.warn("[main] 日终报告生成失败:", rep.error);
+      }
+      return r;
+    },
   });
   executorService.setScheduler(tradingScheduler);
   await t("启动交易调度器", () => tradingScheduler.start());
@@ -304,7 +321,7 @@ app.whenReady().then(async () => {
   }
 
   try {
-    registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, tradingScheduler, strategyBridge, modelService, localServer, discoveryBeacon, getMainWindow: () => mainWindow });
+    registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, tradingScheduler, reportService, strategyBridge, modelService, localServer, discoveryBeacon, getMainWindow: () => mainWindow });
   } catch (e) {
     console.warn("[main] IPC registration partially failed:", e && e.stack || e);
   }
