@@ -197,7 +197,7 @@ module.exports = {
       },
     },
     {
-      name: "今日视图：报告未生成时给盘中预览，且不调账户/持仓接口",
+      name: "盘中预览：反映当日成交与信号，且不调账户/持仓接口",
       async fn() {
         const src = makeSource();
         const ts = makeTradeService({ dailyCallBudget: 300, reserveForStopLoss: 100 }, src);
@@ -209,10 +209,12 @@ module.exports = {
           logService: ts._log,
           getExecutorStatuses: () => [{ strategyId: "s", strategyName: "x", status: "running", tickCount: 1, pollCount: 10 }],
         });
-        const view = await rs.today();
-        assert.strictEqual(view.generated, false, "未到 15:05 应标记为预览");
+        // 用 preview() 而不是 today()：today() 会在报告已生成时返回缓存，结果依赖运行环境
+        const view = await rs.preview();
+        assert.strictEqual(view.generated, false, "预览不应标记为已生成");
         assert.strictEqual(view.orders, 1, "预览也要能反映当日成交");
         assert.strictEqual(view.signals, 1);
+        assert.strictEqual(view.account, null, "预览不查账户");
         assert.strictEqual(src.state.calls, callsBefore, "预览不能额外消耗交易接口额度");
       },
     },

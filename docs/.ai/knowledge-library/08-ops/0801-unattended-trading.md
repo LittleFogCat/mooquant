@@ -196,6 +196,27 @@ canPlaceOrder(now) {
 **坑**：`LogService` 与 `ReportService` 的日期口径必须都是**本地日期**（原先用 `toISOString().slice(0,10)` 是 UTC，
 在 00:00-08:00 之间会串到前一天），否则日报会读不到当天的成交流水。
 
+## 无界面交易引擎（`tools/trade-daemon.js`）
+
+无人值守常驻机不需要界面；界面起不来时策略也得能跑。daemon 复用同一套服务层
+（`QuoteService / TradeService / ExecutorService / TradingScheduler / ReportService`），
+只是把「窗口 + IPC」换成「控制台 + `data/logs/daemon.log`」，策略与风控路径完全一致。
+
+```bash
+npm run trade:daemon                  # 常驻到 day_end 自动退出
+node tools/trade-daemon.js --until=15:10
+node tools/trade-daemon.js --no-trade # 只算信号不下单（演练）
+```
+
+要点：
+
+- **单实例锁** `data/trade-daemon.lock`（pid + 启动时间）：已有 daemon 在跑时直接退出，
+  避免两个进程对同一策略重复下单；
+- **与界面互斥**：`npm start` 起的应用和 daemon 不能同时跑（两边都会恢复 `status=running` 的策略）；
+- 启动即在窗口内补跑事件（例如 10:19 启动会补 `market_open`），策略随即完成当日第一个信号点；
+- 每 5 分钟心跳一次，打印调度状态、额度占用、每个策略的「已算信号/上次信号/跳过原因/异常」；
+- `SIGINT` / `day_end` / `--until` 三种退出方式，退出前补一份日报。
+
 ## 单测
 
 ```bash

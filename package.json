@@ -18,7 +18,8 @@
     "dist:mac": "electron-builder --mac",
     "dist:linux": "electron-builder --linux",
     "vite:watch": "vite build --watch",
-    "test:node": "node tests/node/run.js"
+    "test:node": "node tests/node/run.js",
+    "trade:daemon": "node tools/trade-daemon.js"
   },
   "devDependencies": {
     "electron": "^31.0.0",
