@@ -204,6 +204,9 @@ class MyStrategy(StrategyBase):
     if (!s.calibrated) parts.push('<span style="color:#f5a524">节假日未校准</span>');
     if (s.nextEventAt) parts.push("下一时点 " + escapeHtml(s.nextEventAt));
     if (s.lastError) parts.push('<span style="color:#e5484d">' + escapeHtml(s.lastError) + '</span>');
+    if (s.role === "observer") {
+      parts.push('<span style="color:#f5a524">观察模式：交易由另一进程执行，本窗口不下单</span>');
+    }
     var extra = "";
     if (s.calendar && s.calendar.loaded) {
       extra = '<div style="font-size:11px;color:var(--text-3);margin-top:2px">交易日历：' +

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * mookquant · 无界面交易引擎（trade daemon）
  *
  * 为什么需要它：
@@ -14,8 +14,8 @@
  *   node tools/trade-daemon.js --until=15:10   # 指定退出时间
  *   node tools/trade-daemon.js --no-trade      # 只算信号不下单（演练）
  *
- * 安全：启动时写 data/trade-daemon.lock，避免与另一个 daemon 同时下单；
- * 界面（npm start）与本 daemon 不要同时运行——同一策略会重复下单。
+ * 安全：与界面共用 data/trading.lock 抢「交易权」，同一策略只会有一个进程下单；
+ * 界面（npm start）抢不到锁时会自动降级为观察模式（只读，不下单）。
  */
 const fs = require("fs");
 const path = require("path");
@@ -45,11 +45,14 @@ const { ModelService } = require(path.join(ROOT, "main/services/model-service"))
 const { TradingCalendar } = require(path.join(ROOT, "main/services/trading-calendar"));
 const { TradingScheduler } = require(path.join(ROOT, "main/services/trading-scheduler"));
 const { ReportService } = require(path.join(ROOT, "main/services/report-service"));
+const { InstanceLock } = require(path.join(ROOT, "main/services/instance-lock"));
 const { createDataSource } = require(path.join(ROOT, "main/datasources"));
 const { createTradeDataSource } = require(path.join(ROOT, "main/datasources/trade"));
 
-const LOCK = path.join(ROOT, "data", "trade-daemon.lock");
 const LOG = path.join(ROOT, "data", "logs", "daemon.log");
+
+/** 本次运行的锁句柄（退出时统一释放） */
+let activeLock = null;
 
 /** 解析 --key=value 形式的命令行参数 */
 function args() {
@@ -71,36 +74,21 @@ function log(msg) {
   } catch {}
 }
 
-/** 单实例锁：返回 false 表示已有 daemon 在跑 */
+/**
+ * 单实例锁：与界面共用 data/trading.lock —— 同一时刻只允许一个进程拥有交易权，
+ * 否则两边各下一单。界面抢不到锁会自己降级为观察模式。
+ */
 function acquireLock() {
-  try {
-    if (fs.existsSync(LOCK)) {
-      const raw = JSON.parse(fs.readFileSync(LOCK, "utf-8"));
-      if (raw && raw.pid) {
-        try {
-          process.kill(raw.pid, 0); // 探测进程是否还活着
-          log("已有 daemon 在运行（pid=" + raw.pid + "，" + raw.startedAt + "），本次退出");
-          return false;
-        } catch {
-          log("发现陈旧的锁文件（pid=" + raw.pid + " 已不存在），覆盖");
-        }
-      }
-    }
-    fs.mkdirSync(path.dirname(LOCK), { recursive: true });
-    fs.writeFileSync(LOCK, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }, null, 2), "utf-8");
-    return true;
-  } catch (e) {
-    log("锁文件写入失败（继续运行，但请自行确保没有第二个实例）：" + e.message);
-    return true;
+  const lock = new InstanceLock({ role: "daemon" });
+  const r = lock.acquire("daemon");
+  if (!r.ok) {
+    const h = r.holder || {};
+    log("交易权已被 pid=" + h.pid + "（" + (h.role || "?") + "，启动于 " + (h.startedAt || "?") +
+      "）持有，本次退出。若确认那是残留实例，先结束它再启动。");
+    return null;
   }
-}
-
-function releaseLock() {
-  try {
-    if (!fs.existsSync(LOCK)) return;
-    const raw = JSON.parse(fs.readFileSync(LOCK, "utf-8"));
-    if (raw && raw.pid === process.pid) fs.unlinkSync(LOCK);
-  } catch {}
+  if (r.stale) log("已接管陈旧锁（原持有进程已不存在）");
+  return lock;
 }
 
 async function main() {
@@ -110,7 +98,9 @@ async function main() {
   const autoTrade = { ...cfgManager.autoTrade };
   if (opt["no-trade"]) autoTrade.enabled = false;
 
-  if (!acquireLock()) process.exit(0);
+  const lock = acquireLock();
+  activeLock = lock;
+  if (!lock) process.exit(0);
 
   let quoteService = null, tradeService = null, modelService = null;
   let executorService = null, scheduler = null, reportService = null;
@@ -136,7 +126,7 @@ async function main() {
     try { if (tradeService) tradeService.dispose(); } catch {}
     try { if (quoteService) quoteService.dispose(); } catch {}
     try { if (modelService) modelService.dispose(); } catch {}
-    releaseLock();
+    lock.release();
     log("已退出");
     process.exit(0);
   };
@@ -251,6 +241,6 @@ async function main() {
 
 main().catch((e) => {
   log("启动失败：" + (e && e.stack ? e.stack : e));
-  releaseLock();
+  try { if (activeLock) activeLock.release(); } catch {}
   process.exit(1);
 });

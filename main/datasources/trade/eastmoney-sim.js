@@ -50,6 +50,33 @@ class EastmoneySimTradeDataSource {
     this._baseUrl = (options.baseUrl || process.env.MX_API_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
     this._accountId = options.accountId || process.env.MX_ACCOUNT_ID || "";
     this._cache = new Map(); // method -> { at, data }
+    // 真实接口调用计数（缓存命中不算）：额度守门以这个为准，否则 UI 多次读同一份
+    // 持仓会被重复计费，把 300 的预算几分钟就烧光
+    this._apiCalls = 0;
+    this._apiCallsDate = new Date().toISOString().slice(0, 10);
+  }
+
+  /**
+   * 接口调用统计（供 TradeService 的额度守门使用）
+   * @returns {{date:string, calls:number, cacheEntries:number}}
+   */
+  getCallStats() {
+    const today = new Date().toISOString().slice(0, 10);
+    if (today !== this._apiCallsDate) {
+      this._apiCallsDate = today;
+      this._apiCalls = 0;
+    }
+    return { date: this._apiCallsDate, calls: this._apiCalls, cacheEntries: this._cache.size };
+  }
+
+  /** 记一次真实请求（含失败与重试） */
+  _countCall() {
+    const today = new Date().toISOString().slice(0, 10);
+    if (today !== this._apiCallsDate) {
+      this._apiCallsDate = today;
+      this._apiCalls = 0;
+    }
+    this._apiCalls++;
   }
 
   /** 启动自检：没有 key 直接失败，让工厂回落到 mock */
@@ -75,6 +102,7 @@ class EastmoneySimTradeDataSource {
    * @param {number} [attempt] 内部重试计数
    */
   async _post(path, body = {}, attempt = 0) {
+    this._countCall(); // 真实请求（含失败、含重试）都算一次额度
     let res;
     try {
       res = await fetch(this._url(path), {

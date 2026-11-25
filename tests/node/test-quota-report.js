@@ -137,6 +137,20 @@ module.exports = {
       },
     },
     {
+      name: "优先用数据源自报的真实调用数（缓存命中不扣额度）",
+      async fn() {
+        const src = makeSource();
+        // 模拟东财适配器：真实 HTTP 调用 4 次，但服务层被调用了 1 次（其余走 5s 缓存）
+        src.getCallStats = () => ({ date: "2026-11-25", calls: 4, cacheEntries: 2 });
+        const ts = makeTradeService({ dailyCallBudget: 300, reserveForStopLoss: 100 }, src);
+        await ts.getAccount();
+        const q = ts.getQuota();
+        assert.strictEqual(q.source, "adapter", "应使用数据源计数");
+        assert.strictEqual(q.used, 4, "应按真实调用数计，而不是服务层调用数");
+        assert.strictEqual(q.openAllowed, true);
+      },
+    },
+    {
       name: "日终报告：账户/持仓/成交/信号/额度齐全，净值可算",
       async fn() {
         const src = makeSource();

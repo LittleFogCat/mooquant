@@ -60,6 +60,9 @@ class TradeService {
   /**
    * 当前额度状态
    * limit=0 表示未启用守门（mock/QMT 无硬性额度）
+   *
+   * 计数口径：优先用数据源自报的「真实 HTTP 调用数」（缓存命中不算），
+   * 否则用服务层调用数。前者才对应平台真正扣的额度——读缓存不该扣费。
    */
   getQuota() {
     const limit = this._quotaCfg.dailyCallBudget;
@@ -68,17 +71,29 @@ class TradeService {
       this._calls = 0;
       this._callsDate = this._todayKey();
     }
+    let used = this._calls;
+    let source = "service";
+    if (this.source && typeof this.source.getCallStats === "function") {
+      try {
+        const stats = this.source.getCallStats();
+        if (stats && Number.isFinite(Number(stats.calls))) {
+          used = Number(stats.calls);
+          source = "adapter";
+        }
+      } catch {}
+    }
     const openThreshold = limit > 0 ? limit - reserve : 0;
     return {
       date: this._callsDate,
-      used: this._calls,
+      used,
+      source,
       limit,
       reserve,
-      remaining: limit > 0 ? Math.max(0, limit - this._calls) : null,
+      remaining: limit > 0 ? Math.max(0, limit - used) : null,
       openBudget: limit > 0 ? openThreshold : null,
-      openAllowed: limit <= 0 || this._calls < openThreshold,
-      closeAllowed: limit <= 0 || this._calls < limit,
-      usedRatio: limit > 0 ? +(this._calls / limit).toFixed(4) : 0,
+      openAllowed: limit <= 0 || used < openThreshold,
+      closeAllowed: limit <= 0 || used < limit,
+      usedRatio: limit > 0 ? +(used / limit).toFixed(4) : 0,
     };
   }
 

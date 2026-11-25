@@ -49,6 +49,7 @@
     "schedTickMs": 20000,
     "dailyCallBudget": 300,
     "reserveForStopLoss": 100,
+    "role": "auto",
     "calendarOverrides": {}
   }
 }

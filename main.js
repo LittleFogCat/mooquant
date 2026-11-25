@@ -54,6 +54,7 @@ const { ExecutorService } = require("./main/services/executor-service");
 const { TradingCalendar } = require("./main/services/trading-calendar");
 const { TradingScheduler } = require("./main/services/trading-scheduler");
 const { ReportService } = require("./main/services/report-service");
+const { InstanceLock } = require("./main/services/instance-lock");
 const { ModelService } = require("./main/services/model-service");
 const { createDataSource } = require("./main/datasources");
 const { createTradeDataSource } = require("./main/datasources/trade");
@@ -67,6 +68,8 @@ let executorService = null;
 let tradingCalendar = null;
 let tradingScheduler = null;
 let reportService = null;
+let instanceLock = null;
+let runtimeRole = "trader"; // trader=有权下单；observer=只读观察（另一个进程在交易）
 let modelService = null;
 let localServer = null;
 let discoveryBeacon = null;
@@ -277,6 +280,28 @@ app.whenReady().then(async () => {
 
   updateSplash(splash, "恢复策略执行...", 75);
 
+  // 交易权判定：策略执行器/额度计数都是进程内存状态，两个进程会各下一单，
+  // 所以先抢 data/trading.lock；抢不到就降级为观察者（只读账户、不开执行器）。
+  runtimeRole = "trader";
+  instanceLock = new InstanceLock({ role: "app" });
+  if (configManager.autoTrade.role === "observer") {
+    runtimeRole = "observer";
+    console.log("[main] 配置为观察模式（autoTrade.role=observer），本进程不下单");
+  } else {
+    const lock = instanceLock.acquire("app");
+    if (!lock.ok) {
+      runtimeRole = "observer";
+      const h = lock.holder || {};
+      console.warn(
+        "[main] 交易权已被 pid=" + h.pid + "（" + (h.role || "?") + "，启动于 " + (h.startedAt || "?") + "）持有，" +
+        "本进程降级为观察模式：可以看到持仓/信号，但不会下单"
+      );
+    } else {
+      if (lock.stale) console.log("[main] 已接管陈旧锁（原持有进程已不存在）");
+      console.log("[main] 已取得交易权（pid=" + process.pid + "）");
+    }
+  }
+
   executorService = new ExecutorService({
     strategyService, quoteService, tradeService, strategyBridge, modelService,
     autoTrade: configManager.autoTrade,
@@ -295,8 +320,8 @@ app.whenReady().then(async () => {
     autoTrade: configManager.autoTrade,
     onEvent: async (name, payload) => {
       const r = await executorService.onTradingEvent(name, payload);
-      // 日终结算：出报告（失败只记日志，不影响次日）
-      if (name === "settle") {
+      // 日终结算：只由交易者生成报告，观察者不写（避免覆盖对方那份）
+      if (name === "settle" && runtimeRole === "trader") {
         const rep = await reportService.generate(payload && payload.date);
         if (!rep.ok) console.warn("[main] 日终报告生成失败:", rep.error);
       }
@@ -307,7 +332,11 @@ app.whenReady().then(async () => {
   await t("启动交易调度器", () => tradingScheduler.start());
   console.log("[main] 调度器状态:", JSON.stringify(tradingScheduler.getStatus()));
 
-  await t("恢复策略执行", () => executorService.restoreRunning());
+  if (runtimeRole === "trader") {
+    await t("恢复策略执行", () => executorService.restoreRunning());
+  } else {
+    console.log("[main] 观察模式：跳过策略恢复，界面只展示另一进程的交易结果");
+  }
 
   // 启动模型服务（HTTP 子进程）
   updateSplash(splash, "启动模型服务...", 85);
@@ -321,7 +350,7 @@ app.whenReady().then(async () => {
   }
 
   try {
-    registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, tradingScheduler, reportService, strategyBridge, modelService, localServer, discoveryBeacon, getMainWindow: () => mainWindow });
+    registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, tradingScheduler, reportService, runtimeRole: () => runtimeRole, strategyBridge, modelService, localServer, discoveryBeacon, getMainWindow: () => mainWindow });
   } catch (e) {
     console.warn("[main] IPC registration partially failed:", e && e.stack || e);
   }
@@ -347,5 +376,6 @@ app.on("window-all-closed", () => {
   if (tradingScheduler) tradingScheduler.stop();
   if (executorService) executorService.dispose();
   if (modelService) modelService.dispose();
+  if (instanceLock) instanceLock.release();
   if (process.platform !== "darwin") app.quit();
 });

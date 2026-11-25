@@ -50,6 +50,8 @@ class ConfigManager {
       schedTickMs: Number(a.schedTickMs) > 0 ? Number(a.schedTickMs) : 20000,
       dailyCallBudget: Number(a.dailyCallBudget) > 0 ? Number(a.dailyCallBudget) : 300,
       reserveForStopLoss: Number(a.reserveForStopLoss) >= 0 ? Number(a.reserveForStopLoss) : 100,
+      // auto：能抢到交易权就当交易者，抢不到降级为观察者；trader：强制当交易者；observer：只看不交易
+      role: ["auto", "trader", "observer"].includes(a.role) ? a.role : "auto",
       calendarOverrides: a.calendarOverrides || {},
     };
   }

@@ -1,4 +1,4 @@
-# 无人值守定时交易（交易日历 / 调度器 / 策略周期）
+﻿# 无人值守定时交易（交易日历 / 调度器 / 策略周期）
 
 > 版本基线：v0.1.42
 > 相关：`06-trade/0601-trade-channels.md`、`07-data/0701-quote-sources.md`、`docs/.ai/plan/auto-trading-daily.md`
@@ -196,6 +196,45 @@ canPlaceOrder(now) {
 **坑**：`LogService` 与 `ReportService` 的日期口径必须都是**本地日期**（原先用 `toISOString().slice(0,10)` 是 UTC，
 在 00:00-08:00 之间会串到前一天），否则日报会读不到当天的成交流水。
 
+## 模拟盘页（renderer/js/views/sim-view.js）
+
+「模拟」是无人值守的面板页，一屏回答四个问题：引擎现在什么状态、今天赚了多少、今天做了什么、历史日报。
+
+数据刻意分两类加载，**目的是让常开这个页面不吃额度**：
+
+| 类型 | 内容 | 成本 | 频率 |
+|---|---|---|---|
+| `loadLive()` | 调度器状态、执行器状态、今日报告预览、额度、通道信息 | **0 次接口**（本地状态 + 读当日流水文件） | 5s 轮询 |
+| `loadSnapshot()` | 账户、持仓、委托 | **3 次接口** | 进页面 / 手动刷新 |
+| `generateReport()` | 生成今日日报 | 2 次接口 | 手动点击（15:05 会自动跑） |
+
+页面内容：引擎状态条（状态/交易日/下一时点/是否持有交易权/自动下单开关/通道）→ 四个数字卡（总资产、今日盈亏、净值、额度）
+→ 运行中策略表（调度/已算信号/上次信号/跳过原因）→ 持仓 → 今日委托 → 历史日报列表。
+
+### 额度计数口径（重要）
+
+`TradeService` 原来的计数是「服务层调用次数」，但东财适配器有 5 秒读缓存——同一份持仓被 UI 连读 4 次只发 1 次请求，
+按服务层计会把预算虚高消耗掉（界面上开一会儿就把 300 用完，然后禁止开仓）。
+
+现在 `quota.used` 优先取数据源自报的真实 HTTP 调用数（`source.getCallStats()`，在 `_post()` 里累加，
+含失败与重试；缓存命中不算），拿不到才回落服务层计数，并在 `quota.source` 里标明 `adapter` / `service`。
+
+## 单实例与角色（`instance-lock.js`）
+
+策略执行器、额度计数、下单节流、去重集合全是**进程内存**状态，两个进程各跑一遍就会各下一单。
+所以「谁有权下单」必须落到跨进程可见的地方 —— `data/trading.lock`：
+
+| 角色 | 判据 | 行为 |
+|---|---|---|
+| trader | 抢到锁 | 恢复策略、执行调度事件、15:05 出日报 |
+| observer | 抢不到锁（另一进程 pid 还活着），或 `autoTrade.role=observer` | 不恢复策略；`executor:start` 直接返回「观察模式不可下单」；不写日报 |
+
+规则：`autoTrade.role` 取 `auto`（默认，能抢就抢、抢不到降级）/ `trader` / `observer`。
+锁文件带 pid，进程被杀留下的陈旧锁会被下一个进程接管（`process.kill(pid, 0)` 探测）。
+界面与 `tools/trade-daemon.js` 共用这把锁，所以**可以同时开**：先起的当交易者，后起的自动变观察者。
+
+> 注意：观察者是在**启动时**判定的。若 daemon 退出后想让界面接管，重启界面即可。
+
 ## 无界面交易引擎（`tools/trade-daemon.js`）
 
 无人值守常驻机不需要界面；界面起不来时策略也得能跑。daemon 复用同一套服务层
@@ -220,7 +259,7 @@ node tools/trade-daemon.js --no-trade # 只算信号不下单（演练）
 ## 单测
 
 ```bash
-node tests/node/run.js            # 全部（45 例）
+node tests/node/run.js            # 全部（58 例）
 node tests/node/run.js scheduler  # 只跑调度器
 node tests/node/run.js full-day   # 只跑全流程模拟
 ```

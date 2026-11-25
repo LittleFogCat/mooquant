@@ -3,7 +3,9 @@
  */
 const { TradingScheduler } = require("../services/trading-scheduler");
 
-function registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, tradingScheduler, reportService, strategyBridge, modelService, localServer, discoveryBeacon, getMainWindow }) {
+function registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, tradingScheduler, reportService, runtimeRole, strategyBridge, modelService, localServer, discoveryBeacon, getMainWindow }) {
+  /** 当前进程角色：trader=有权下单，observer=只读观察（另一进程持有交易权） */
+  const role = () => (typeof runtimeRole === "function" ? runtimeRole() : "trader");
   const { ipcMain } = require("electron");
   // ---- 行情 ----
   ipcMain.handle("quote:query", async (_e, s) => quoteService.query(s));
@@ -114,7 +116,16 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
   }
   // ---- 策略执行 ----
   if (executorService) {
-    ipcMain.handle("executor:start", async (_e, id, symbols) => executorService.start(id, symbols));
+    ipcMain.handle("executor:start", async (_e, id, symbols) => {
+      // 观察模式下本进程不下单，否则会和持有交易权的进程重复下单
+      if (role() !== "trader") {
+        return {
+          ok: false,
+          error: "当前为观察模式（交易权在另一个进程），请停止该进程后再启动策略",
+        };
+      }
+      return executorService.start(id, symbols);
+    });
     ipcMain.handle("executor:stop", async (_e, id) => executorService.stop(id));
     ipcMain.handle("executor:status", async (_e, id) => executorService.getStatus(id));
     ipcMain.handle("executor:list", async () => executorService.listRunning());
@@ -125,6 +136,7 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
       ok: true,
       data: {
         ...tradingScheduler.getStatus(),
+        role: role(),
         preflight: executorService ? executorService.getPreflight() : null,
       },
     }));

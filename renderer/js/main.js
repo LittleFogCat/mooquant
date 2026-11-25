@@ -13,6 +13,7 @@ import { WatchlistViewModel } from './viewmodels/watchlist-viewmodel.js';
 import { StrategyViewModel } from './viewmodels/strategy-viewmodel.js';
 import { BacktestViewModel } from './viewmodels/backtest-viewmodel.js';
 import { TradeViewModel } from './viewmodels/trade-viewmodel.js';
+import { SimViewModel } from './viewmodels/sim-viewmodel.js';
 import { SettingsViewModel } from './viewmodels/settings-viewmodel.js';
 import { ModelViewModel } from './viewmodels/model-viewmodel.js';
 
@@ -24,6 +25,7 @@ import * as WatchlistView from './views/watchlist-view.js';
 import * as StrategyView from './views/strategy-view.js';
 import * as BacktestView from './views/backtest-view.js';
 import * as TradeView from './views/trade-view.js';
+import * as SimView from './views/sim-view.js';
 import * as SettingsView from './views/settings-view.js';
 import * as ModelView from './views/model-view.js';
 
@@ -39,7 +41,7 @@ window.AppFacade = facade;
 window.AppRouter = Router;
 
 // ---- 跨区块引用（F5 刷新需要触达各页 ViewModel）----
-const pageVM = { quote: null, watchlist: null, strategy: null, backtest: null, trade: null, settings: null, model: null };
+const pageVM = { quote: null, watchlist: null, strategy: null, backtest: null, trade: null, sim: null, settings: null, model: null };
 
 // ---- 行情页 ----
 safe('行情页', () => {
@@ -106,6 +108,19 @@ safe('交易页', () => {
   pageVM.trade = tradeVM;
   TradeView.render(document.getElementById("tradeContainer"), tradeVM);
   Router.onEnter("trade", () => tradeVM.loadAll());
+});
+
+// ---- 模拟盘页（无人值守面板）----
+safe('模拟页', () => {
+  const simVM = new SimViewModel(facade);
+  pageVM.sim = simVM;
+  SimView.render(document.getElementById("simContainer"), simVM);
+  // 进入：免费状态 + 一次账户快照；离开：停掉轮询，避免后台空转
+  Router.onEnter("sim", () => {
+    simVM.enter();
+    simVM.startPolling(5000);
+  });
+  Router.onLeave("sim", () => simVM.stopPolling());
 });
 
 // ---- 设置页 ----
