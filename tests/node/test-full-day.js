@@ -106,6 +106,7 @@ module.exports = {
         });
         executor._logTick = () => {}; // 不落盘
         executor._updateStatus = async () => {};
+        executor._saveFiredKeys = () => {}; // 去重键也不落盘（否则污染 data/executor）
 
         // ---- 虚拟时钟 ----
         const RealDate = Date;

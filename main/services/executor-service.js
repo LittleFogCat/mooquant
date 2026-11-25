@@ -17,6 +17,8 @@
 const { LogService } = require("./log-service");
 const { sessionState, canTrade, stateLabel } = require("./market-clock");
 const { resolveSchedule, evaluate, nextFireAt } = require("./strategy-timing");
+const fs = require("fs");
+const path = require("path");
 
 function log(msg) {
   console.log("[executor] " + msg);
@@ -39,6 +41,8 @@ function toLot(qty) {
 const DEFAULT_TICK_MS = 15000;
 /** 去重 key 上限，超过则按日期清理 */
 const FIRED_KEYS_LIMIT = 400;
+/** 「当日已触发的时点」落盘目录：进程重启后不能把同一个时点再算一遍 */
+const FIRED_DIR = path.join(__dirname, "..", "..", "data", "executor");
 
 class StrategyExecutor {
   constructor({ strategy, symbols, quoteService, tradeService, strategyService, strategyBridge, modelService, autoTrade, tradingCalendar, getScheduler }) {
@@ -78,6 +82,7 @@ class StrategyExecutor {
     this._error = null;
     this._consecutiveErrors = 0;
     this._plan = resolveSchedule(this.strategy.schedule || {});
+    this._loadFiredKeys(new Date());
     this._updateStatus("running");
     log("启动策略: " + this.strategy.name + " (" + this.strategy.id + ") 调度=" + this._plan.label);
 
@@ -181,6 +186,7 @@ class StrategyExecutor {
     }
     this._firedKeys.add(ev.key);
     this._pruneFired(now);
+    this._saveFiredKeys(now);
     this._lastFireKey = ev.key;
     this._lastFireAt = now.toISOString();
     this._nextFire = nextFireAt(this._plan, now);
@@ -193,6 +199,43 @@ class StrategyExecutor {
     const today = ymdLocal(now);
     for (const key of this._firedKeys) {
       if (!key.startsWith(today)) this._firedKeys.delete(key);
+    }
+  }
+
+  /**
+   * 当日已触发时点落盘
+   *
+   * 为什么必须持久化：去重键原来只存在内存里，进程重启（崩溃、升级、手动重启）后
+   * 会把同一个时点再算一遍。若上一次算出来的信号是买入，重算仍会得到买入 → 重复下单。
+   * 「查 pending 委托」拦不住这种情况，因为市价单瞬时成交，查的时候早就不是 pending 了。
+   */
+  _firedFile() {
+    return path.join(FIRED_DIR, this.strategy.id + ".json");
+  }
+
+  _loadFiredKeys(now) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(this._firedFile(), "utf-8"));
+      const today = ymdLocal(now);
+      if (raw && raw.date === today && Array.isArray(raw.keys)) {
+        for (const k of raw.keys) this._firedKeys.add(k);
+        if (raw.keys.length) log("已恢复当日已触发时点: " + raw.keys.join(", "));
+      }
+    } catch {
+      // 没有记录（首次运行）或文件损坏：当作今天还没触发过
+    }
+  }
+
+  _saveFiredKeys(now) {
+    try {
+      fs.mkdirSync(FIRED_DIR, { recursive: true });
+      fs.writeFileSync(
+        this._firedFile(),
+        JSON.stringify({ date: ymdLocal(now), keys: Array.from(this._firedKeys) }, null, 2),
+        "utf-8"
+      );
+    } catch (e) {
+      log("已触发时点落盘失败（重启后可能重复计算，但不影响本次）: " + e.message);
     }
   }
 

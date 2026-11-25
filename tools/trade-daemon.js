@@ -1,4 +1,4 @@
-﻿/**
+/**
  * mookquant · 无界面交易引擎（trade daemon）
  *
  * 为什么需要它：
@@ -216,7 +216,8 @@ async function main() {
         " 额度=" + JSON.stringify(tradeService.getQuota()));
       for (const e of ex) {
         log("  · 策略 " + e.strategyName + " [" + e.status + "] 调度=" + (e.schedule && e.schedule.label) +
-          " 已算信号=" + e.tickCount + " 上次=" + (e.signal || "-") +
+          " 已算信号=" + e.tickCount +
+          " 上次=" + (e.lastSignal ? e.lastSignal.action : "-") +
           " 跳过=" + (e.lastSkip || "-") + (e.error ? " 异常=" + e.error : ""));
       }
     } catch (e) {

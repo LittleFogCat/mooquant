@@ -50,6 +50,7 @@ data/trades/
 data/strategies/
 data/calendar/
 data/reports/
+data/executor/
 
 # Model artifacts (binary weights)
 data/models/

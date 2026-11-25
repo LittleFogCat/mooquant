@@ -9,11 +9,14 @@ const assert = require("assert");
 const { StrategyExecutor } = require("../../main/services/executor-service");
 
 function makeExecutor(schedule) {
-  return new StrategyExecutor({
+  const ex = new StrategyExecutor({
     strategy: { id: "st_test", name: "测试策略", type: "ma_cross", schedule, risk: {} },
     symbols: ["sz000001"],
     autoTrade: {},
   });
+  // 除了专门的「重启去重」用例外，其余用例不落盘（避免污染 data/executor）
+  ex._saveFiredKeys = () => {};
+  return ex;
 }
 
 /** 以 stepSec 步长遍历 [from, to] 时间段，返回真正该算信号的次数 */
@@ -118,6 +121,41 @@ module.exports = {
         await ex._tickSymbol("sz000001");
         assert.ok(/1m/.test(ex._lastSkip || ""), "跳过原因应说明缺 1m K 线，实际：" + ex._lastSkip);
         assert.strictEqual(ex._consecutiveErrors, 0, "不该计为错误（否则会误触发熔断）");
+      },
+    },
+    {
+      name: "重启后不重算已触发时点（防重复下单）",
+      fn() {
+        const fs = require("fs");
+        const path = require("path");
+        const DIR = path.join(__dirname, "..", "..", "data", "executor");
+        const id = "st_test_restart_guard";
+        const file = path.join(DIR, id + ".json");
+        try { fs.unlinkSync(file); } catch {}
+
+        const mk = () =>
+          new StrategyExecutor({
+            strategy: { id, name: "重启守卫", type: "ma_cross", schedule: { period: "1d" }, risk: {} },
+            symbols: ["sz000001"],
+            autoTrade: {},
+          });
+
+        const first = mk();
+        assert.strictEqual(first._isDue(new Date("2026-11-25T09:31:10")), true, "首次应触发");
+        assert.ok(fs.existsSync(file), "触发后必须落盘，否则重启无法去重");
+
+        // 模拟进程重启：新实例只能靠磁盘恢复
+        const second = mk();
+        second._loadFiredKeys(new Date("2026-11-25T09:33:00"));
+        assert.strictEqual(second._isDue(new Date("2026-11-25T09:33:00")), false, "重启后不能重算同一个时点");
+        assert.strictEqual(second._isDue(new Date("2026-11-25T14:55:10")), true, "另一个时点照常触发");
+
+        // 隔天应清空旧 key
+        const third = mk();
+        third._loadFiredKeys(new Date("2026-11-26T09:31:10"));
+        assert.strictEqual(third._isDue(new Date("2026-11-26T09:31:10")), true, "次日照常触发");
+
+        try { fs.unlinkSync(file); } catch {}
       },
     },
   ],
