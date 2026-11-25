@@ -11,6 +11,7 @@
  *
  * 用法：
  *   node tools/trade-daemon.js                 # 跑到收盘（day_end）自动退出
+ *   node tools/trade-daemon.js --forever       # 常驻：收盘后不退出，等下个交易日
  *   node tools/trade-daemon.js --until=15:10   # 指定退出时间
  *   node tools/trade-daemon.js --no-trade      # 只算信号不下单（演练）
  *
@@ -196,7 +197,14 @@ async function main() {
         const r = await reportService.generate(payload && payload.date);
         log("日终报告：" + (r.ok ? "已生成 " + r.data.date + "，成交 " + r.data.orders + " 笔" : "失败 " + r.error));
       }
-      if (name === "day_end") await shutdown("day_end");
+      if (name === "day_end") {
+        if (opt.forever) {
+          // 常驻模式：不退出、不再重复出报告（15:05 已生成），等次日 09:15
+          log("今日收盘结束，常驻等待下一个交易日（Ctrl+C 退出）");
+        } else {
+          await shutdown("day_end");
+        }
+      }
     },
   });
   executorService.setScheduler(scheduler);
@@ -207,10 +215,17 @@ async function main() {
   }))));
 
   // 每 5 分钟打一次心跳，便于事后确认「它当时还活着、在等什么」
+  // 空闲（非交易时段）时降到 30 分钟一次，避免常驻一晚刷几百行日志
+  let lastIdleLogAt = 0;
   statusTimer = setInterval(() => {
     try {
       const st = scheduler.getStatus();
       const ex = executorService.listRunning().data;
+      if (st.state === "idle") {
+        const nowMs = Date.now();
+        if (nowMs - lastIdleLogAt < 30 * 60 * 1000) return;
+        lastIdleLogAt = nowMs;
+      }
       log("心跳 状态=" + st.stateLabel + " 交易日=" + (st.isTradingDay ? "是" : "否") +
         " 下一时点=" + st.nextEventAt +
         " 额度=" + JSON.stringify(tradeService.getQuota()));

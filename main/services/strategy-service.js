@@ -23,6 +23,18 @@ function filePath(id) {
   return path.join(STRATEGY_DIR, id + ".json");
 }
 
+/**
+ * 读取 JSON 文件，容忍 UTF-8 BOM
+ *
+ * 为什么必须处理：Windows 记事本/PowerShell 5.1 的 `Set-Content -Encoding utf8`
+ * 都会写 BOM，而 `JSON.parse('\uFEFF{...}')` 直接抛错。策略列表的读取包在 try/catch 里，
+ * 结果是这个策略**静默消失**（列表里看不到、执行器也不会恢复它），排查起来非常费劲。
+ */
+function readJsonLoose(fp) {
+  const raw = fs.readFileSync(fp, "utf-8");
+  return JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
+}
+
 class StrategyService {
   constructor() {
     ensureDir();
@@ -32,7 +44,7 @@ class StrategyService {
     const files = fs.readdirSync(STRATEGY_DIR).filter((f) => f.endsWith(".json"));
     const items = files.map((f) => {
       try {
-        return JSON.parse(fs.readFileSync(path.join(STRATEGY_DIR, f), "utf-8"));
+        return readJsonLoose(path.join(STRATEGY_DIR, f));
       } catch {
         return null;
       }
@@ -44,7 +56,7 @@ class StrategyService {
   async getById(id) {
     const fp = filePath(id);
     if (!fs.existsSync(fp)) return null;
-    return JSON.parse(fs.readFileSync(fp, "utf-8"));
+    return readJsonLoose(fp);
   }
 
   async create(payload) {
@@ -96,4 +108,4 @@ class StrategyService {
   }
 }
 
-module.exports = { StrategyService };
+module.exports = { StrategyService, readJsonLoose, STRATEGY_DIR };

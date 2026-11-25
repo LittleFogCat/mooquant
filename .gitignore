@@ -47,7 +47,11 @@ data/logs/
 data/backtest_results/
 data/equity/
 data/trades/
-data/strategies/
+data/strategies/*
+# 用户策略目录保持忽略，但「下单链路上手」这个定义要纳入版本管理（不含策略实例 JSON）
+!data/strategies/user/
+data/strategies/user/*
+!data/strategies/user/verify_order_once.py
 data/calendar/
 data/reports/
 data/executor/

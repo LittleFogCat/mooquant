@@ -1,4 +1,4 @@
-/**
+﻿/**
  * mookquant · Node 侧测试脚手架（零依赖）
  *
  * 项目没有 JS 测试框架，这里用 node:assert 做最小可用的跑批：
@@ -16,6 +16,7 @@ const FILES = [
   "test-executor-gating.js",
   "test-quota-report.js",
   "test-instance-lock.js",
+  "test-strategy-json.js",
   "test-sim-view.js",
   "test-full-day.js",
 ];

@@ -1,4 +1,4 @@
-﻿# 无人值守定时交易（交易日历 / 调度器 / 策略周期）
+# 无人值守定时交易（交易日历 / 调度器 / 策略周期）
 
 > 版本基线：v0.1.42
 > 相关：`06-trade/0601-trade-channels.md`、`07-data/0701-quote-sources.md`、`docs/.ai/plan/auto-trading-daily.md`
@@ -247,23 +247,59 @@ canPlaceOrder(now) {
 
 ```bash
 npm run trade:daemon                  # 常驻到 day_end 自动退出
+node tools/trade-daemon.js --forever  # 常驻：收盘不退出，等下个交易日（推荐）
 node tools/trade-daemon.js --until=15:10
 node tools/trade-daemon.js --no-trade # 只算信号不下单（演练）
 ```
 
 要点：
 
-- **单实例锁** `data/trade-daemon.lock`（pid + 启动时间）：已有 daemon 在跑时直接退出，
-  避免两个进程对同一策略重复下单；
-- **与界面互斥**：`npm start` 起的应用和 daemon 不能同时跑（两边都会恢复 `status=running` 的策略）；
+- **单实例锁** `data/trading.lock`（pid + 启动时间）：已被别的进程持有时直接退出，
+  避免两个进程对同一策略重复下单；进程被杀留下的陈旧锁会被自动接管；
+- **与界面共存**：界面抢不到锁会降级为 observer（只读不下单），所以两者可以同时开着；
+- **`--forever`**：`day_end` 不再退出，跨日自动重置（调度器按日期清 fired、执行器 key 带日期前缀），
+  空闲时心跳降到 30 分钟一次，避免常驻一夜刷几百行日志；只有重启电脑才需要重新拉起；
 - 启动即在窗口内补跑事件（例如 10:19 启动会补 `market_open`），策略随即完成当日第一个信号点；
 - 每 5 分钟心跳一次，打印调度状态、额度占用、每个策略的「已算信号/上次信号/跳过原因/异常」；
-- `SIGINT` / `day_end` / `--until` 三种退出方式，退出前补一份日报。
+- `SIGINT` / `day_end`（非 forever）/ `--until` 三种退出方式，退出前补一份日报。
+
+## 自动下单链路的真机验证（`verify_order_once`）
+
+无人值守最容易「看起来在跑、其实从没下过单」——策略天天返回 hold，链路永远没被真实走过一次。
+`data/strategies/user/verify_order_once.py` 就是为这个准备的：
+
+- 只在参数 `only_on` 指定的交易日出手，买入固定股数（默认 100 股，自动取整到整手）；
+- 其它日期一律 `hold`，所以它只会产生**一笔小额委托**，不会变成天天买入的漏洞；
+- 为什么不用「无持仓就买」：实盘信号走 `_compute_signal`，它每次全量重放历史 bars，
+  且不注入 `ctx.position`，策略无法感知持仓 —— 用「指定日期」触发更可靠。
+
+配套的策略实例（**仅本机、不提交** `data/strategies/st_verify_order_001.json`）：
+
+```json
+{ "type": "verify_order_once", "params": { "only_on": "2026-11-26", "qty": 100 },
+  "symbols": ["sh601288"], "schedule": { "period": "1d", "at": ["09:35"] },
+  "risk": { "maxDailyTrades": 1, "maxPositionRatio": 0.01 } }
+```
+
+验证通过后应停用该策略实例（它不是交易策略）。
+
+**验证方法（不必等到盘中）**：模型服务起来后直接打 `/signal`，把真实日线的最后一根日期改成目标日：
+
+```bash
+curl -s -X POST http://127.0.0.1:18765/signal -H "Content-Type: application/json" \
+  -d '{"strategy":"verify_order_once","params":{"only_on":"2026-11-26","qty":100},"symbol":"sh601288","bars":[...]}'
+# 目标日 → {"action":"buy","qty":100,...}；非目标日 → {"action":"hold"}
+```
+
+> 坑：`StrategyService` 读策略 JSON 必须容忍 **UTF-8 BOM**。记事本、PowerShell 5.1 的
+> `Set-Content -Encoding utf8` 都会写 BOM，而 `JSON.parse` 遇到 BOM 直接抛错，
+> 被列表读取的 try/catch 吞掉后策略会**静默消失**（界面看不到、执行器也不恢复）。
+> 现在统一走 `readJsonLoose()`。
 
 ## 单测
 
 ```bash
-node tests/node/run.js            # 全部（59 例）
+node tests/node/run.js            # 全部（63 例）
 node tests/node/run.js scheduler  # 只跑调度器
 node tests/node/run.js full-day   # 只跑全流程模拟
 ```
@@ -275,6 +311,9 @@ node tests/node/run.js full-day   # 只跑全流程模拟
 | `test-trading-scheduler.js` | 七时点事件序列、去重、重启补跑、非交易日、放行边界、跨日重置、异常隔离 |
 | `test-executor-gating.js` | 执行器三道闸门（Mock 时间驱动 `_isDue` / `_isTradingAllowed`） |
 | `test-quota-report.js` | 额度分级拦截（开仓/平仓/用尽）、失败调用也计数、日终报告聚合与落盘 |
+| `test-instance-lock.js` | 交易权锁：首次获取、活锁拒绝、陈旧锁接管、只删自己的锁 |
+| `test-strategy-json.js` | 策略 JSON 读取容忍 UTF-8 BOM（否则策略会静默消失） |
+| `test-sim-view.js` | 模拟页渲染：拼装完整性、观察模式提示、XSS 转义 |
 | `test-full-day.js` | **全流程**：虚拟时钟 08:50→15:30 每 15s 步进，真实模块接线，行情/账户全用桩 |
 
 **全流程模拟**是验收「日线策略一天只算 2 次」最直接的方式（也是唯一不依赖真实等待的验证手段）：

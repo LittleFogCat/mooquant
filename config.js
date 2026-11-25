@@ -1,4 +1,4 @@
 ﻿const config = {
-  version: '0.1.46',
+  version: '0.1.47',
 }
 module.exports = config;
