@@ -195,6 +195,10 @@ if (window.mookquant && window.mookquant.facade) { return window.mookquant.facad
     status: async (id) => ({ ok: true, data: { strategyId: id, status: "stopped" } }),
     list: async () => ({ ok: true, data: [] }),
   };
+  var schedulerMock = {
+    status: async () => ({ ok: false, data: { state: "idle", stateLabel: "空闲", isTradingDay: false, calibrated: false } }),
+    events: async () => ({ ok: true, data: [] }),
+  };
   var logsMock = {
     trades: async () => [],
     strategy: async () => [],
@@ -230,6 +234,7 @@ if (window.mookquant && window.mookquant.facade) { return window.mookquant.facad
   },
   app: { info: async () => ({ name: "mookquant", version: "0.2.0", platform: "browser" }), restart: async () => { location.reload(); } },
     executor: executorMock,
+    scheduler: schedulerMock,
     logs: logsMock,
   };
 }

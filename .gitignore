@@ -48,6 +48,8 @@ data/backtest_results/
 data/equity/
 data/trades/
 data/strategies/
+data/calendar/
+data/reports/
 
 # Model artifacts (binary weights)
 data/models/

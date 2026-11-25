@@ -17,7 +17,8 @@
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
     "dist:linux": "electron-builder --linux",
-    "vite:watch": "vite build --watch"
+    "vite:watch": "vite build --watch",
+    "test:node": "node tests/node/run.js"
   },
   "devDependencies": {
     "electron": "^31.0.0",

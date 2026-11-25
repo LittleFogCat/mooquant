@@ -1,7 +1,9 @@
 /**
  * mookquant · IPC 路由
  */
-function registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, strategyBridge, modelService, localServer, discoveryBeacon, getMainWindow }) {
+const { TradingScheduler } = require("../services/trading-scheduler");
+
+function registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, tradingScheduler, strategyBridge, modelService, localServer, discoveryBeacon, getMainWindow }) {
   const { ipcMain } = require("electron");
   // ---- 行情 ----
   ipcMain.handle("quote:query", async (_e, s) => quoteService.query(s));
@@ -115,6 +117,17 @@ function registerIpc({ quoteService, strategyService, backtestService, tradeServ
     ipcMain.handle("executor:stop", async (_e, id) => executorService.stop(id));
     ipcMain.handle("executor:status", async (_e, id) => executorService.getStatus(id));
     ipcMain.handle("executor:list", async () => executorService.listRunning());
+  }
+  // ---- 交易调度（交易日历 + 时点状态机） ----
+  if (tradingScheduler) {
+    ipcMain.handle("scheduler:status", async () => ({
+      ok: true,
+      data: {
+        ...tradingScheduler.getStatus(),
+        preflight: executorService ? executorService.getPreflight() : null,
+      },
+    }));
+    ipcMain.handle("scheduler:events", async () => ({ ok: true, data: TradingScheduler.EVENTS }));
   }
   // ---- 日志查询 ----
   {

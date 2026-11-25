@@ -262,10 +262,11 @@ class QuoteService {
       reconnecting: this._reconnecting,
       stockCount: this._stockList ? this._stockList.length : 0,
     };
-    if (this.source.mode === "qmt" && typeof this.source.ping === "function") {
+    if (this.source.mode !== "mock" && typeof this.source.ping === "function") {
       const p = await this.source.ping();
-      status.connected = !!p.connected;
-      status.error = p.error || null;
+      // QMT 源返回 connected；东财公开行情返回 ok
+      status.connected = !!(p && (p.connected !== undefined ? p.connected : p.ok));
+      status.error = (p && p.error) || null;
     }
     return status;
   }

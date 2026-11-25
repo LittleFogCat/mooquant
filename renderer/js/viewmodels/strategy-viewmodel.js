@@ -9,6 +9,7 @@ class StrategyViewModel {
     this.state = {
       list: [],
       executorStatus: {},
+      schedulerStatus: null,
       strategyTypes: [],
       models: [],
       exportedScript: null,
@@ -125,6 +126,11 @@ class StrategyViewModel {
         const map = {};
         for (const s of resp.data) map[s.strategyId] = s;
         this._set({ executorStatus: map });
+      }
+      // 调度器状态：用于展示「今天为什么没交易」（状态/交易日/下一时点）
+      if (this.facade.scheduler) {
+        const sr = await this.facade.scheduler.status();
+        if (sr && sr.ok && sr.data) this._set({ schedulerStatus: sr.data });
       }
     } catch {}
   }

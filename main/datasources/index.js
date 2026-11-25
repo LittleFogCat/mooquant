@@ -37,6 +37,13 @@ async function createDataSource(opts) {
     return source;
   }
 
+  if (mode === "eastmoney") {
+    const { EastmoneyDataSource } = require("./eastmoney");
+    const source = new EastmoneyDataSource(opts.eastmoney || {});
+    await source.init();
+    return source;
+  }
+
   if (mode === "auto") {
     const { QmtDataSource } = require("./qmt");
     try {

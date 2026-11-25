@@ -51,6 +51,8 @@ const { BacktestService } = require("./main/services/backtest-service");
 const { TradeService } = require("./main/services/trade-service");
 const { ConfigManager } = require("./main/services/config-manager");
 const { ExecutorService } = require("./main/services/executor-service");
+const { TradingCalendar } = require("./main/services/trading-calendar");
+const { TradingScheduler } = require("./main/services/trading-scheduler");
 const { ModelService } = require("./main/services/model-service");
 const { createDataSource } = require("./main/datasources");
 const { createTradeDataSource } = require("./main/datasources/trade");
@@ -61,6 +63,8 @@ let mainWindow = null;
 let quoteService = null, strategyService = null, backtestService = null, tradeService = null;
 let configManager = null;
 let executorService = null;
+let tradingCalendar = null;
+let tradingScheduler = null;
 let modelService = null;
 let localServer = null;
 let discoveryBeacon = null;
@@ -259,11 +263,33 @@ app.whenReady().then(async () => {
 
   updateSplash(splash, "初始化交易数据源...", 50);
   backtestService = new BacktestService({ strategyService, config: configManager.qmt });
-  const tradeSource = await t("初始化交易数据源", () => createTradeDataSource({ mode: configManager.tradeSource, qmt: configManager.qmt }));
+  const tradeSource = await t("初始化交易数据源", () => createTradeDataSource({ mode: configManager.tradeSource, qmt: configManager.qmt, eastmoney: configManager.eastmoney }));
   tradeService = new TradeService({ source: tradeSource });
 
+  updateSplash(splash, "加载交易日历...", 70);
+  // 交易日历：拉不到就降级为「仅周一~周五」，不阻塞启动
+  tradingCalendar = new TradingCalendar({ overrides: configManager.autoTrade.calendarOverrides });
+  const cal = await t("加载交易日历", () => tradingCalendar.ensureLoaded());
+  console.log("[main] 交易日历:", JSON.stringify(cal));
+
   updateSplash(splash, "恢复策略执行...", 75);
-  executorService = new ExecutorService({ strategyService, quoteService, tradeService, strategyBridge, modelService });
+
+  executorService = new ExecutorService({
+    strategyService, quoteService, tradeService, strategyBridge, modelService,
+    autoTrade: configManager.autoTrade,
+    tradingCalendar,
+  });
+
+  // 调度器：只发事件、不放行下单；执行器每次 tick 向它确认窗口
+  tradingScheduler = new TradingScheduler({
+    calendar: tradingCalendar,
+    autoTrade: configManager.autoTrade,
+    onEvent: (name, payload) => executorService.onTradingEvent(name, payload),
+  });
+  executorService.setScheduler(tradingScheduler);
+  await t("启动交易调度器", () => tradingScheduler.start());
+  console.log("[main] 调度器状态:", JSON.stringify(tradingScheduler.getStatus()));
+
   await t("恢复策略执行", () => executorService.restoreRunning());
 
   // 启动模型服务（HTTP 子进程）
@@ -278,7 +304,7 @@ app.whenReady().then(async () => {
   }
 
   try {
-    registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, strategyBridge, modelService, localServer, discoveryBeacon, getMainWindow: () => mainWindow });
+    registerIpc({ quoteService, strategyService, backtestService, tradeService, configManager, executorService, tradingScheduler, strategyBridge, modelService, localServer, discoveryBeacon, getMainWindow: () => mainWindow });
   } catch (e) {
     console.warn("[main] IPC registration partially failed:", e && e.stack || e);
   }
@@ -301,6 +327,7 @@ app.on("window-all-closed", () => {
   if (quoteService) quoteService.dispose();
   if (backtestService) backtestService.dispose();
   if (tradeService) tradeService.dispose();
+  if (tradingScheduler) tradingScheduler.stop();
   if (executorService) executorService.dispose();
   if (modelService) modelService.dispose();
   if (process.platform !== "darwin") app.quit();

@@ -34,5 +34,22 @@ class ConfigManager {
   get dataSource() { return this._config.dataSource || "auto"; }
   get tradeSource() { return this._config.tradeSource || "mock"; }
   get qmt() { return this._config.qmt || {}; }
+  /** 东财妙想模拟盘配置（baseUrl 等；密钥从 .env 读取，不入配置） */
+  get eastmoney() { return this._config.eastmoney || {}; }
+  /**
+   * 无人值守交易配置（时段放行 / 下单节流 / 调度节拍）
+   * 缺省值集中在 config/default.json，这里只做类型兜底，避免策略侧拿到 undefined。
+   */
+  get autoTrade() {
+    const a = this._config.autoTrade || {};
+    return {
+      enabled: a.enabled !== false,
+      allowOffHours: a.allowOffHours === true,
+      minOrderIntervalMs: Number(a.minOrderIntervalMs) > 0 ? Number(a.minOrderIntervalMs) : 30000,
+      tickMs: Number(a.tickMs) > 0 ? Number(a.tickMs) : 15000,
+      schedTickMs: Number(a.schedTickMs) > 0 ? Number(a.schedTickMs) : 20000,
+      calendarOverrides: a.calendarOverrides || {},
+    };
+  }
 }
 module.exports = { ConfigManager };

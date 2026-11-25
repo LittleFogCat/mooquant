@@ -137,11 +137,14 @@ function renderQmtStatus(status) {
     text.textContent = "重连中...";
   } else if (status.connected) {
     dot.className = "status-dot online";
-    text.textContent = "QMT 已连接";
+    text.textContent = status.mode === "eastmoney" ? "东财行情 已连接" : "QMT 已连接";
   } else if (status.mode === "mock") {
     dot.className = "status-dot mock";
     // auto 模式回落到 mock：提示 QMT 不可用（按 F5 可重试 QMT）
     text.textContent = status.configuredMode === "auto" ? "Mock · QMT 不可用" : "Mock 模式";
+  } else if (status.mode === "eastmoney") {
+    dot.className = "status-dot offline";
+    text.textContent = "东财行情 未连接";
   } else {
     dot.className = "status-dot offline";
     text.textContent = "QMT 未连接";

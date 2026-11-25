@@ -1,4 +1,4 @@
-﻿/**
+/**
  * mookquant · 交易数据源抽象层
  *
  * 接口：
@@ -26,6 +26,14 @@ async function createTradeDataSource(opts) {
   if (mode === "qmt") {
     const { QmtTradeDataSource } = require("./qmt-trade");
     const source = new QmtTradeDataSource(opts.qmt || {});
+    await source.init();
+    return source;
+  }
+
+  // 东方财富妙想模拟盘（官方 REST，密钥走 .env 的 MX_APIKEY）
+  if (mode === "eastmoney" || mode === "mx") {
+    const { EastmoneySimTradeDataSource } = require("./eastmoney-sim");
+    const source = new EastmoneySimTradeDataSource(opts.eastmoney || {});
     await source.init();
     return source;
   }

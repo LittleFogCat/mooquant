@@ -47,6 +47,10 @@ const facade = {
     status: (id) => ipcRenderer.invoke("executor:status", id),
     list: () => ipcRenderer.invoke("executor:list"),
   },
+  scheduler: {
+    status: () => ipcRenderer.invoke("scheduler:status"),
+    events: () => ipcRenderer.invoke("scheduler:events"),
+  },
   trade: {
     info: () => ipcRenderer.invoke("trade:info"),
     placeOrder: (o) => ipcRenderer.invoke("trade:placeOrder", o),

@@ -32,6 +32,7 @@ import { escapeHtml } from '../utils/format.js';
             <label class="form-label">行情数据源</label>
             <div class="radio-group">
               <label class="radio-item ${state.dataSource === "auto" ? "checked" : ""}"><input type="radio" name="ds" value="auto" ${state.dataSource === "auto" ? "checked" : ""} /><span class="radio-label">Auto（优先 QMT，失败回落 mock）</span></label>
+              <label class="radio-item ${state.dataSource === "eastmoney" ? "checked" : ""}"><input type="radio" name="ds" value="eastmoney" ${state.dataSource === "eastmoney" ? "checked" : ""} /><span class="radio-label">东财公开行情（免 Key，无需客户端）</span></label>
               <label class="radio-item ${state.dataSource === "qmt" ? "checked" : ""}"><input type="radio" name="ds" value="qmt" ${state.dataSource === "qmt" ? "checked" : ""} /><span class="radio-label">QMT（真实行情）</span></label>
               <label class="radio-item ${state.dataSource === "mock" ? "checked" : ""}"><input type="radio" name="ds" value="mock" ${state.dataSource === "mock" ? "checked" : ""} /><span class="radio-label">Mock（本地模拟，无需 QMT）</span></label>
             </div>
@@ -40,6 +41,7 @@ import { escapeHtml } from '../utils/format.js';
             <label class="form-label">交易数据源</label>
             <div class="radio-group">
               <label class="radio-item ${state.tradeSource === "mock" ? "checked" : ""}"><input type="radio" name="ts" value="mock" ${state.tradeSource === "mock" ? "checked" : ""} /><span class="radio-label">Mock（模拟交易）</span></label>
+              <label class="radio-item ${state.tradeSource === "eastmoney" ? "checked" : ""}"><input type="radio" name="ts" value="eastmoney" ${state.tradeSource === "eastmoney" ? "checked" : ""} /><span class="radio-label">东财妙想模拟盘（.env 需 MX_APIKEY）</span></label>
               <label class="radio-item ${state.tradeSource === "qmt" ? "checked" : ""}"><input type="radio" name="ts" value="qmt" ${state.tradeSource === "qmt" ? "checked" : ""} /><span class="radio-label">QMT（实盘交易）</span></label>
             </div>
           </div>

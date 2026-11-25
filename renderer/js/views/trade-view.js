@@ -89,15 +89,24 @@ import { escapeHtml, fmtNum, cls } from '../utils/format.js';
     `;
   }
 
+  /** 委托时间：ISO → 本地 MM-DD HH:mm:ss（东财返回 UTC 的 ISO 串） */
+  function fmtTime(v) {
+    if (!v) return "-";
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return escapeHtml(String(v));
+    const p = (n) => String(n).padStart(2, "0");
+    return p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+  }
+
   function renderOrders(state, vm) {
     const orders = state.orders || [];
     if (!orders.length) return '<div class="card"><div class="card-title">委托</div><div class="empty-state"><div class="empty-state-text">无委托记录</div></div></div>';
     const rows = orders.slice(0, 30).map((o) => `
       <tr>
-        <td>${escapeHtml(o.createdAt || "-")}</td>
+        <td>${fmtTime(o.createdAt)}</td>
         <td><span class="badge badge-${o.side === "buy" ? "buy" : "sell"}">${o.side === "buy" ? "买入" : "卖出"}</span></td>
         <td>${escapeHtml(o.symbol)}</td>
-        <td class="num">${o.orderType === "market" ? "市价" : fmtNum(o.price)}</td>
+        <td class="num">${o.price > 0 ? fmtNum(o.price) : "市价"}</td>
         <td class="num">${o.quantity}</td>
         <td>${ORDER_STATUS_LABELS[o.status] ? `<span class="badge badge-${o.status}">${ORDER_STATUS_LABELS[o.status]}</span>` : escapeHtml(o.status)}</td>
         <td>${o.status === "pending" ? '<button class="btn btn-danger btn-sm" data-cancel="' + escapeHtml(o.orderId) + '">撤单</button>' : ""}</td>

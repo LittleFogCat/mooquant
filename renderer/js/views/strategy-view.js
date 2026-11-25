@@ -18,6 +18,15 @@ const TYPE_LABELS = {
 
   const STATUS_LABELS = { draft: "草稿", active: "启用", archived: "归档" };
 
+  /** ISO 时间 → MM-DD HH:mm（用于日历更新时间等轻量展示） */
+  function fmtTime(iso) {
+    if (!iso) return "-";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    const p = (n) => String(n).padStart(2, "0");
+    return p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+  }
+
   /** 风控参数 schema（固定结构，表单化渲染） */
   const RISK_SCHEMA = [
     { key: "stopLoss", type: "float", default: 0.05, min: 0, max: 1, step: 0.01, label: "止损比例", hint: "亏损达到此比例时自动卖出（0.05 = 5%）" },
@@ -181,12 +190,37 @@ class MyStrategy(StrategyBase):
       '<input type="hidden" id="st_risk_keys" value="' + escapeHtml(RISK_SCHEMA.map(function (p) { return p.key + ":" + p.type; }).join(",")) + '" />';
   }
 
+  /** 调度器状态条：一眼看清「今天为什么没交易」 */
+  function renderSchedulerBar(state) {
+    var s = state.schedulerStatus;
+    if (!s) return "";
+    var dot = s.state === "open" || s.state === "tail" ? "var(--up, #e5484d)"
+      : s.state === "pre" ? "#f5a524"
+      : "var(--text-3)";
+    var parts = [];
+    parts.push('<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + dot + ';margin-right:6px"></span>');
+    parts.push('<strong>' + escapeHtml(s.stateLabel || s.state || "空闲") + '</strong>');
+    parts.push(s.isTradingDay ? "今日为交易日" : "今日非交易日");
+    if (!s.calibrated) parts.push('<span style="color:#f5a524">节假日未校准</span>');
+    if (s.nextEventAt) parts.push("下一时点 " + escapeHtml(s.nextEventAt));
+    if (s.lastError) parts.push('<span style="color:#e5484d">' + escapeHtml(s.lastError) + '</span>');
+    var extra = "";
+    if (s.calendar && s.calendar.loaded) {
+      extra = '<div style="font-size:11px;color:var(--text-3);margin-top:2px">交易日历：' +
+        escapeHtml(String(s.calendar.tradingDays || 0)) + " 个交易日 · 来源 " + escapeHtml(s.calendar.source || "-") +
+        (s.calendar.fetchedAt ? " · 更新于 " + escapeHtml(fmtTime(s.calendar.fetchedAt)) : "") + '</div>';
+    }
+    return '<div style="padding:8px 12px;margin-bottom:12px;border-radius:8px;background:var(--bg-2, rgba(127,127,127,.08));font-size:12px">' +
+      parts.join(" · ") + extra + '</div>';
+  }
+
   function renderList(state, vm) {
     if (state.loading && !state.list.length) {
       return '<div class="empty-state"><div class="empty-state-text">加载中...</div></div>';
     }
+    var bar = renderSchedulerBar(state);
     if (!state.list.length) {
-      return '<div class="empty-state"><div class="empty-state-text">还没有策略，点击「新建策略」开始</div></div>';
+      return bar + '<div class="empty-state"><div class="empty-state-text">还没有策略，点击「新建策略」开始</div></div>';
     }
     const rows = state.list.map((s) => {
       const exec = state.executorStatus[s.id];
@@ -200,6 +234,10 @@ class MyStrategy(StrategyBase):
         ? '<div style="font-size:11px;color:var(--text-3);margin-top:2px">' +
           (exec.lastSignal ? exec.lastSignal.action + " (" + exec.lastSignal.reason + ")" : "无信号") +
           " · tick#" + (exec.tickCount || 0) +
+          (exec.schedule ? " · 调度：" + escapeHtml(exec.schedule.label) +
+            (exec.schedule.next ? "（下次 " + escapeHtml(exec.schedule.next.at) + "）" : "") : "") +
+          (exec.marketLabel ? " · " + escapeHtml(exec.marketLabel) : "") +
+          (exec.lastSkip ? " · 跳过：" + escapeHtml(exec.lastSkip) : "") +
           (exec.error ? " · ⚠ " + escapeHtml(exec.error) : "") +
           "</div>"
         : "";
@@ -232,7 +270,7 @@ class MyStrategy(StrategyBase):
         '</td>' +
       '</tr>';
     }).join("");
-    return '<table class="data-table">' +
+    return bar + '<table class="data-table">' +
       '<thead><tr><th>名称</th><th>类型</th><th>标的</th><th>状态</th><th>更新日期</th><th>操作</th></tr></thead>' +
       '<tbody>' + rows + '</tbody>' +
     '</table>';

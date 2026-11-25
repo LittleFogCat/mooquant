@@ -33,7 +33,7 @@ import { escapeHtml, fmtNum as fmtNumber, fmtBig, cls } from '../utils/format.js
     const sign = d.change > 0 ? "+" : "";
     const timeStr = new Date(d.timestamp).toLocaleString("zh-CN", { hour12: false });
 
-    const tag = mode === "qmt"
+    const tag = (mode === "qmt" || mode === "eastmoney")
       ? `<span class="source-tag">● 实时</span>`
       : `<span class="source-tag mock">● 演示</span>`;
 

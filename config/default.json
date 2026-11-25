@@ -1,5 +1,5 @@
 {
-  "dataSource": "qmt",
+  "dataSource": "eastmoney",
   "cache": {
     "ttlMs": 5000
   },
@@ -17,7 +17,11 @@
     "minHeight": 540,
     "titleBarStyle": "hiddenInset"
   },
-  "tradeSource": "mock",
+  "tradeSource": "eastmoney",
+  "eastmoney": {
+    "baseUrl": "https://mkapi2.dfcfs.com/finskillshub",
+    "timeoutMs": 15000
+  },
   "modelServer": {
     "port": 18765
   },
@@ -36,5 +40,13 @@
       "intervalMs": 3000,
       "directedBroadcast": true
     }
+  },
+  "autoTrade": {
+    "enabled": true,
+    "allowOffHours": false,
+    "minOrderIntervalMs": 30000,
+    "tickMs": 15000,
+    "schedTickMs": 20000,
+    "calendarOverrides": {}
   }
 }
