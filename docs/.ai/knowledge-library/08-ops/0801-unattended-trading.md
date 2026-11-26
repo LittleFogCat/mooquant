@@ -192,6 +192,10 @@ canPlaceOrder(now) {
 设计要点：
 
 - **只读聚合**：账户 1 次 + 持仓 1 次，其余全读本地日志/内存状态，避免为了出报告再烧额度；
+- **委托终态回填**（v0.1.48）：本地流水写的是「下单瞬间」的状态（市价单转激进限价，落库时多为 `pending`），
+  不查回来日报就会把已成交记成待成交。现在当日有委托时会多花 1 次 `getOrders`，按 `orderId`
+  把 `status/filledPrice/filledQuantity` 回填，并给出 `ordersReconciled` / `filled` 两个字段。
+  没有委托的日子不查（省额度）；**预览模式不回填**（预览必须保持零接口开销）；
 - **失败不缺席**：接口挂了照样生成报告，把原因塞进 `errors`（报告缺失比数据不全更糟）；
 - `nav = totalAssets / (totalAssets - totalPnl)`，即用当前净值倒推初始资产；
 - `skips` / `strategies.polls` 是回答「今天为什么没交易」的关键字段；
@@ -299,7 +303,7 @@ curl -s -X POST http://127.0.0.1:18765/signal -H "Content-Type: application/json
 ## 单测
 
 ```bash
-node tests/node/run.js            # 全部（63 例）
+node tests/node/run.js            # 全部（65 例）
 node tests/node/run.js scheduler  # 只跑调度器
 node tests/node/run.js full-day   # 只跑全流程模拟
 ```

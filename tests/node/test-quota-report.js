@@ -17,7 +17,7 @@ const TEST_DATE = "1990-01-02"; // 用一个绝不会真实使用的日期，测
 
 /** 交易数据源桩：记录被调用次数 */
 function makeSource(opts = {}) {
-  const state = { calls: 0, failAccount: !!opts.failAccount };
+  const state = { calls: 0, orderSeq: 0, failAccount: !!opts.failAccount };
   const src = {
     mode: "mock",
     get state() {
@@ -38,7 +38,7 @@ function makeSource(opts = {}) {
     },
     placeOrder: async () => {
       state.calls++;
-      return { orderId: "od_1", status: "filled" };
+      return { orderId: "od_" + ++state.orderSeq, status: "pending" };
     },
     cancelOrder: async () => {
       state.calls++;
@@ -230,6 +230,43 @@ module.exports = {
         assert.strictEqual(view.signals, 1);
         assert.strictEqual(view.account, null, "预览不查账户");
         assert.strictEqual(src.state.calls, callsBefore, "预览不能额外消耗交易接口额度");
+      },
+    },
+    {
+      name: "日报用实时委托回填终态（本地流水只有下单瞬间的 pending）",
+      async fn() {
+        const src = makeSource();
+        const ts = makeTradeService({ dailyCallBudget: 300, reserveForStopLoss: 100 }, src);
+        await ts.placeOrder({ symbol: "sz000001", side: "buy", quantity: 100, orderType: "market" });
+        assert.strictEqual(ts._log.records[0].status, "pending", "流水记的是下单瞬间状态");
+
+        // 真实委托已成交
+        src.getOrders = async () => [
+          { orderId: "od_1", status: "filled", filledQuantity: 100, filledPrice: 7.95 },
+        ];
+        const rs = new ReportService({ tradeService: ts, logService: ts._log, getExecutorStatuses: () => [] });
+        const r = await rs.generate(TEST_DATE);
+        assert.strictEqual(r.data.trades[0].status, "filled", "必须回填成终态，否则日报把成交记成待成交");
+        assert.strictEqual(r.data.trades[0].filledPrice, 7.95);
+        assert.strictEqual(r.data.ordersReconciled, 1);
+        assert.strictEqual(r.data.filled, 1);
+
+        fs.unlinkSync(path.join(REPORT_DIR, TEST_DATE + ".json"));
+      },
+    },
+    {
+      name: "无委托时不额外查委托（省额度）",
+      async fn() {
+        const src = makeSource();
+        const ts = makeTradeService({ dailyCallBudget: 300 }, src);
+        const rs = new ReportService({ tradeService: ts, logService: ts._log, getExecutorStatuses: () => [] });
+        const before = src.state.calls;
+        const r = await rs.generate(TEST_DATE);
+        assert.strictEqual(r.data.orders, 0);
+        assert.strictEqual(r.data.ordersReconciled, undefined, "没有委托就不该做回填");
+        // 账户 + 持仓 = 2 次；没有第 3 次查委托
+        assert.strictEqual(src.state.calls - before, 2, "实际多调用了 " + (src.state.calls - before) + " 次");
+        fs.unlinkSync(path.join(REPORT_DIR, TEST_DATE + ".json"));
       },
     },
   ],

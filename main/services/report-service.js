@@ -164,6 +164,35 @@ class ReportService {
       errors.push("交易流水读取失败: " + e.message);
     }
 
+    // 2b. 委托终态回填：本地流水写的是「下单瞬间」的状态（多为 pending），
+    //     而不像成交回查只在策略日志里留痕。不查回来，日报会把成交记成待成交。
+    //     只在「出正式报告」时回填（预览要保持零接口开销），且仅当日有委托时才多花这 1 次调用。
+    if (opts.withAccount && report.trades.length) {
+      try {
+        const ord = await this.tradeService.getOrders();
+        if (ord.ok && Array.isArray(ord.data)) {
+          const byId = new Map(ord.data.map((o) => [String(o.orderId), o]));
+          let reconciled = 0;
+          for (const t of report.trades) {
+            const live = byId.get(String(t.orderId));
+            if (!live) continue;
+            if (live.status && live.status !== t.status) {
+              t.status = live.status;
+              reconciled++;
+            }
+            t.filledQuantity = live.filledQuantity;
+            t.filledPrice = live.filledPrice;
+          }
+          report.ordersReconciled = reconciled;
+        } else if (!ord.ok) {
+          errors.push("委托终态回填失败: " + (ord.error || "未知错误"));
+        }
+      } catch (e) {
+        errors.push("委托终态回填异常: " + e.message);
+      }
+    }
+    report.filled = report.trades.filter((t) => t.status === "filled").length;
+
     // 3. 策略侧视角（为什么没交易）
     try {
       const execs = this._getExecutors() || [];
