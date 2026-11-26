@@ -241,6 +241,17 @@ class StrategyExecutor {
 
   /** 单标的：风控 → 取数 → 信号 → 执行 */
   async _tickSymbol(symbol) {
+    // 0. 交易通道已被阻断（113 额度用尽/账户休眠、114 密钥失效）：
+    //    再算信号也没有意义（下单必然失败），直接跳过，避免每个时点白试一遍。
+    //    演练模式（只算信号不下单）不受影响，仍然出信号。
+    const quota = this.tradeService && typeof this.tradeService.getQuota === "function"
+      ? this.tradeService.getQuota()
+      : null;
+    if (quota && quota.blocked && this._autoTrade.enabled !== false) {
+      this._lastSkip = "交易通道不可用：" + (quota.blockReason || "额度或授权异常");
+      return;
+    }
+
     // 1. 运行时风控：止损止盈（优先级最高）
     const riskAction = await this._checkStopLossProfit(symbol);
     if (riskAction) {
@@ -328,6 +339,15 @@ class StrategyExecutor {
     // 总开关：autoTrade.enabled=false 时只算信号不下单（安全演练模式）
     if (this._autoTrade.enabled === false) {
       this._lastSkip = "自动交易已关闭（仅记录信号）";
+      return;
+    }
+
+    // 通道阻断兜底（正常路径在 _tickSymbol 就跳过了，这里防御并发/状态变化）
+    const q = this.tradeService && typeof this.tradeService.getQuota === "function"
+      ? this.tradeService.getQuota()
+      : null;
+    if (q && q.blocked) {
+      this._lastSkip = "交易通道不可用：" + (q.blockReason || "额度或授权异常");
       return;
     }
 

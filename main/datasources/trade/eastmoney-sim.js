@@ -79,13 +79,32 @@ class EastmoneySimTradeDataSource {
     this._apiCalls++;
   }
 
-  /** 启动自检：没有 key 直接失败，让工厂回落到 mock */
+  /**
+   * 启动自检：没有 key 直接失败，让工厂回落
+   *
+   * 注意 113（额度用尽/账户休眠）**不能**让初始化失败：密钥是有效的，账户只是被降额到 10 次/天。
+   * 如果这里抛错，工厂/主进程会认为交易通道不可用 —— 应用甚至起不来，而这恰恰是最需要
+   * 「能启动、能看到状态、能提示去激活」的时候。所以只记一条 warning，把阻断交给额度守门处理。
+   */
   async init() {
     if (!this._apiKey) {
       throw new Error("缺少 MX_APIKEY（请写入项目根目录 .env）");
     }
-    // 用一次资金查询验证 key 与绑定关系
-    await this.getAccount({ force: true });
+    try {
+      await this.getAccount({ force: true });
+      this._initWarning = null;
+    } catch (e) {
+      const msg = (e && e.message) || "";
+      const dormant = /\b113\b/.test(msg) || msg.includes("休眠") || msg.includes("调用次数已达到上限");
+      if (!dormant) throw e; // 密钥无效(114)/网络失败 仍然按初始化失败处理
+      this._initWarning = msg;
+      console.warn("[eastmoney-sim] 账户处于休眠/限流状态，交易通道将以只读+阻断模式启动：" + msg);
+    }
+  }
+
+  /** 初始化时的告警（休眠等非致命问题），供界面/日志展示 */
+  get initWarning() {
+    return this._initWarning || null;
   }
 
   // ---------------------------------------------------------------- 内部工具

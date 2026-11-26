@@ -17,6 +17,7 @@ const FILES = [
   "test-quota-report.js",
   "test-instance-lock.js",
   "test-strategy-json.js",
+  "test-trade-adapter-init.js",
   "test-sim-view.js",
   "test-full-day.js",
 ];

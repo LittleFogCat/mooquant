@@ -156,7 +156,7 @@ canPlaceOrder(now) {
 
 - 所有 `source.*` 调用统一走 `_call()`：先计数再调用（失败的请求同样消耗额度）；
 - 计数按本地自然日重置；
-- `getQuota()` 返回 `{used, limit, reserve, remaining, openAllowed, closeAllowed, usedRatio}`；
+- `getQuota()` 返回 `{used, limit, reserve, remaining, openAllowed, closeAllowed, usedRatio, blocked, blockCode, blockReason}`；
 - 分级策略：
   - `used < limit - reserve` → 正常（可开可平）
   - `limit - reserve ≤ used < limit` → **禁止开仓**，只允许平仓/撤单/止损
@@ -167,6 +167,57 @@ canPlaceOrder(now) {
 
 预算按日线策略实测：一天约 6~20 次（盘前体检 + 2 个信号点 + 日终报告），300 的预算留了 15 倍余量，
 其中 100 份专门留给尾盘异常平仓。
+
+### 通道阻断（113 / 114）——比额度守门更重要的一层
+
+**额度守门是"我们自己估的预算"，平台那边还有一道硬限制**，两者不是一回事：
+
+- 2026-11-26 实测：账户处于**休眠**状态时，真实上限是 **10 次/天**（不是 1000）。
+  当天 09:15~14:55 一共用了约 12 次，15:05 出日报时三个接口全部返回
+  `113 您的调用次数已达到上限…账户已经进入休眠状态，基础调用次数调整为10次/天`。
+  结果是日报里 `account: null`、`positions: []`、委托终态回填失败。
+- 所以本地计数只能防"我们自己乱花"，防不了"平台把额度砍到 10"。必须在**收到 113 的那一刻**
+  就把整条通道标记为不可用：
+
+| 错误码 | 含义 | 处理 |
+|---|---|---|
+| 112 | 请求频率过高 | 退避重试（适配器内 2/4/6s） |
+| **113** | 当日额度用尽 / 账户休眠（降到 10 次/天） | `TradeService._noteBlockingError()` 标记 `blocked`，`openAllowed/closeAllowed` 一律 false；执行器在 `_tickSymbol` 开头直接跳过并写明原因；界面显示「通道阻断」+ 原因 |
+| **114** | API Key 不存在 / 已失效 | 同上，且标记 `fatal`（重试无意义） |
+| 500 / 501 | 服务繁忙 / 非交易时间 | 按普通失败处理 |
+
+阻断状态按日期自动解除（跨日 `getBlocked()` 返回 null），**但 113 不会因为跨日就恢复**——
+休眠是账户级状态，需要用户去东财 App 搜索「妙想skill」激活，或走网页接口 `/skill/activate`
+（需要登录态头 `ct/ut/uid/deviceid`，无头环境调不了）。
+
+### 休眠时「起不来」比「不能交易」更糟
+
+2026-11-26 还踩了一个更严重的坑：适配器 `init()` 里有一次自检查询（`getAccount`），
+休眠状态下它抛 113 → 工厂抛错 → **daemon 启动直接失败**（GUI 同理，`createTradeDataSource`
+在 `app.whenReady()` 里就会 reject）。
+
+也就是最需要「能启动、能看到状态、能提示去激活」的时刻，反而起不来。正确语义是：
+
+| 错误 | 初始化 | 理由 |
+|---|---|---|
+| 113（额度/休眠） | **不失败**，记 `initWarning`，通道以阻断模式启动 | 密钥有效，账户只是被降额；能启动才能看到原因 |
+| 114（密钥失效） | 失败 | 重试无意义，必须改配置 |
+| 网络错误 | 失败 | 不该吞掉 |
+
+daemon 会把 `initWarning` 写进 `data/logs/daemon.log`，避免告警只留在 stdout。
+
+> 演练模式（`autoTrade.enabled=false`）不受阻断影响：仍然会算信号，只是不下单 —— 这样断网/断额度期间
+> 依然能观察到策略的判断。
+
+### 日报里不能"猜"的两个字段
+
+1. **`signals`**：必须按当日策略日志统计（`data/logs/{strategyId}/{date}.json` 里带 `signal.action` 的条数），
+   不能用进程内存的 `tickCount` —— 进程重启后它归零，日报会写「今天算了 1 次」而实际是 2 次。
+   现在带 `signalsFromLog` 标记来源。
+2. **`filled`**：终态回填成功时是数字；回填失败（如额度用尽）时为 **`null`（未知）**，
+   绝不写 0 —— 把"不知道"写成"没成交"是最容易误导人的失真。
+
+日报还会带 `strategies[].firedToday`（读 `data/executor/{id}.json`），用来回答"今天这个策略到底跑过哪几个时点"。
 
 ## 日终报告（`report-service.js`）
 
@@ -303,7 +354,7 @@ curl -s -X POST http://127.0.0.1:18765/signal -H "Content-Type: application/json
 ## 单测
 
 ```bash
-node tests/node/run.js            # 全部（65 例）
+node tests/node/run.js            # 全部（77 例）
 node tests/node/run.js scheduler  # 只跑调度器
 node tests/node/run.js full-day   # 只跑全流程模拟
 ```

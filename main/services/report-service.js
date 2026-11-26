@@ -12,6 +12,8 @@ const fs = require("fs");
 const { LogService } = require("./log-service");
 
 const REPORT_DIR = path.join(__dirname, "..", "..", "data", "reports");
+/** 执行器把「当日已触发时点」落在 data/executor/{strategyId}.json */
+const EXECUTOR_DIR = path.join(__dirname, "..", "..", "data", "executor");
 
 /** 本地日期 YYYY-MM-DD（与 LogService 的日志文件口径一致） */
 function ymd(d = new Date()) {
@@ -89,6 +91,7 @@ class ReportService {
       orders: 0,
       cancels: 0,
       rejects: 0,
+      filled: null,   // null = 未知（终态回填失败时保持未知，不要伪装成 0）
       strategies: [],
       skips: [],
       quota: null,
@@ -184,6 +187,8 @@ class ReportService {
             t.filledPrice = live.filledPrice;
           }
           report.ordersReconciled = reconciled;
+          // 成交笔数只有在回填成功时才算已知；回填失败时保持 null（未知 ≠ 没成交）
+          report.filled = report.trades.filter((t) => t.status === "filled").length;
         } else if (!ord.ok) {
           errors.push("委托终态回填失败: " + (ord.error || "未知错误"));
         }
@@ -191,23 +196,38 @@ class ReportService {
         errors.push("委托终态回填异常: " + e.message);
       }
     }
-    report.filled = report.trades.filter((t) => t.status === "filled").length;
 
     // 3. 策略侧视角（为什么没交易）
     try {
       const execs = this._getExecutors() || [];
-      report.strategies = execs.map((e) => ({
-        id: e.strategyId,
-        name: e.strategyName,
-        status: e.status,
-        signals: e.tickCount || 0,
-        polls: e.pollCount || 0,
-        lastSignal: e.lastSignal || null,
-        schedule: e.schedule ? e.schedule.label : null,
-        lastFireKey: e.schedule ? e.schedule.lastFireKey : null,
-        marketLabel: e.marketLabel || null,
-        error: e.error || null,
-      }));
+      report.strategies = execs.map((e) => {
+        // 信号次数以「当日策略日志」为准：进程内存里的 tickCount 会在重启后归零，
+        // 用它统计会出现「今天明明算了 2 次，日报写 1 次」这种失真。
+        let signals = e.tickCount || 0;
+        let fromLog = false;
+        try {
+          const logs = this._log.readStrategyLogs(e.strategyId, date) || [];
+          const n = logs.filter((r) => r && r.signal && r.signal.action).length;
+          if (logs.length) {
+            signals = n;
+            fromLog = true;
+          }
+        } catch {}
+        return {
+          id: e.strategyId,
+          name: e.strategyName,
+          status: e.status,
+          signals,
+          signalsFromLog: fromLog,
+          polls: e.pollCount || 0,
+          lastSignal: e.lastSignal || null,
+          schedule: e.schedule ? e.schedule.label : null,
+          lastFireKey: e.schedule ? e.schedule.lastFireKey : null,
+          firedToday: this._readFiredKeys(e.strategyId, date),
+          marketLabel: e.marketLabel || null,
+          error: e.error || null,
+        };
+      });
       report.signals = report.strategies.reduce((n, s) => n + (s.signals || 0), 0);
       report.skips = execs
         .filter((e) => e.lastSkip)
@@ -281,6 +301,21 @@ class ReportService {
 
   _path(date) {
     return path.join(REPORT_DIR, date + ".json");
+  }
+
+  /**
+   * 读某策略当日的「已触发时点」（执行器落盘的 data/executor/{id}.json）
+   * 用于回答「今天这个策略到底跑过哪几个时点」，比进程内存可信。
+   */
+  _readFiredKeys(strategyId, date) {
+    if (!strategyId) return null;
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(EXECUTOR_DIR, strategyId + ".json"), "utf-8"));
+      if (!raw || raw.date !== date) return null;
+      return Array.isArray(raw.keys) ? raw.keys : null;
+    } catch {
+      return null;
+    }
   }
 }
 

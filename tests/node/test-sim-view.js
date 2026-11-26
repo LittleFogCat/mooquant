@@ -191,5 +191,21 @@ module.exports = {
         assert.ok(!html.includes("<img src=x onerror=alert(1)>"), "策略名未转义");
       },
     },
+    {
+      name: "通道阻断（113 休眠）时给出红字原因与徽标",
+      fn() {
+        const html = renderWith({
+          ...baseState,
+          quota: {
+            used: 5, limit: 300, reserve: 100, openAllowed: false, closeAllowed: false,
+            blocked: true, blockCode: 113,
+            blockReason: "您的调用次数已达到上限，由于您近期活跃度较低，账户已经进入休眠状态",
+          },
+        });
+        assert.ok(html.includes("通道阻断"), "缺阻断徽标");
+        assert.ok(html.includes("113"), "缺错误码");
+        assert.ok(html.includes("休眠状态"), "缺具体原因");
+      },
+    },
   ],
 };

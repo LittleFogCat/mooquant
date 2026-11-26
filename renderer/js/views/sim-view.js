@@ -76,19 +76,29 @@ function renderStats(state) {
   const cell = (label, value, cls2) =>
     '<div class="stat-card"><div class="stat-label">' + label + '</div><div class="stat-value ' + (cls2 || "") + '">' + value + '</div></div>';
 
+  const quotaText = q ? (q.limit > 0 ? q.used + " / " + q.limit : "不限") : "-";
+  const blocked = q && q.blocked;
+  const quotaHint = blocked
+    ? "交易通道已阻断（" + escapeHtml(String(q.blockCode || "")) + "）：" + escapeHtml(q.blockReason || "额度或授权异常")
+    : q
+    ? (q.openAllowed ? "额度充足可开仓" : q.closeAllowed ? "仅允许平仓" : "额度已用尽")
+    : "额度未知";
+
   return `
     <div class="card">
-      <div class="card-title">今日表现${state.snapshotAt ? ' <span style="font-size:11px;color:var(--text-3)">快照 ' + escapeHtml(fmtTime(state.snapshotAt)) + "</span>" : ""}</div>
+      <div class="card-title">今日表现${blocked ? ' <span class="badge badge-error">通道阻断</span>' : ""}${state.snapshotAt ? ' <span style="font-size:11px;color:var(--text-3)">快照 ' + escapeHtml(fmtTime(state.snapshotAt)) + "</span>" : ""}</div>
       <div class="stats-grid">
         ${cell("总资产", a ? fmtNum(a.totalAssets, 0) : "-")}
         ${cell("今日盈亏", pnl != null ? fmtNum(pnl, 2) + (pnlPct != null ? "（" + pnlPct.toFixed(2) + "%）" : "") : "-", cls(pnl))}
         ${cell("净值", nav != null ? nav.toFixed(6) : "-")}
-        ${cell("接口额度", q ? (q.limit > 0 ? q.used + " / " + q.limit : "不限") : "-")}
+        ${cell("接口额度", quotaText)}
       </div>
-      <div style="margin-top:10px;font-size:12px;color:var(--text-3)">
-        今日成交 ${rep ? rep.orders || 0 : 0} 笔 · 策略信号 ${rep ? rep.signals || 0 : 0} 次 ·
+      <div style="margin-top:10px;font-size:12px;color:${blocked ? "#e5484d" : "var(--text-3)"}">
+        今日成交 ${rep ? rep.orders || 0 : 0} 笔 ·
+        ${rep && rep.filled != null ? "成交成功 " + rep.filled + " 笔 · " : ""}
+        策略信号 ${rep ? rep.signals || 0 : 0} 次 ·
         异常 ${rep ? (rep.errors || []).length : 0} 条 ·
-        ${q ? (q.openAllowed ? "额度充足可开仓" : q.closeAllowed ? "仅允许平仓" : "额度已用尽") : "额度未知"}
+        ${quotaHint}
       </div>
     </div>
   `;

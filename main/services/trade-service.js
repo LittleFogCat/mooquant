@@ -54,7 +54,46 @@ class TradeService {
   /** 统一出口：计数 + 调用 */
   async _call(method, ...args) {
     this._trackCall();
-    return this.source[method](...args);
+    try {
+      return await this.source[method](...args);
+    } catch (e) {
+      this._noteBlockingError(e);
+      throw e;
+    }
+  }
+
+  /**
+   * 识别「整条通道已经不可用」的错误，并把通道标记为阻断
+   *
+   * 为什么要在服务层统一识别：东财的 113（额度用尽/账户休眠）和 114（密钥失效）不是
+   * 单次请求失败，而是**后续所有请求都会失败**。如果只让每次调用各自报错，
+   * 执行器会继续每个时点试一遍，日报也会生成一份「账户 null、持仓空、成交 0」的假报告。
+   *
+   * @param {Error} e
+   */
+  _noteBlockingError(e) {
+    const msg = (e && e.message) || "";
+    if (!msg) return;
+    const isQuota = /\b113\b/.test(msg) || msg.includes("休眠") || msg.includes("调用次数已达到上限");
+    const isAuth = /\b114\b/.test(msg) || msg.includes("密钥不存在") || msg.includes("已失效");
+    if (!isQuota && !isAuth) return;
+    this._blocked = {
+      at: new Date().toISOString(),
+      date: this._todayKey(),
+      fatal: isAuth,
+      code: isAuth ? 114 : 113,
+      reason: msg,
+    };
+  }
+
+  /** 当前阻断状态（跨日自动解除，交给用户或次日重试） */
+  getBlocked() {
+    if (!this._blocked) return null;
+    if (this._blocked.date !== this._todayKey()) {
+      this._blocked = null;
+      return null;
+    }
+    return this._blocked;
   }
 
   /**
@@ -83,6 +122,8 @@ class TradeService {
       } catch {}
     }
     const openThreshold = limit > 0 ? limit - reserve : 0;
+    // 通道被阻断（113 额度/休眠、114 密钥失效）时，本地计数已经毫无意义：平台压根不收请求
+    const blocked = this.getBlocked();
     return {
       date: this._callsDate,
       used,
@@ -91,9 +132,13 @@ class TradeService {
       reserve,
       remaining: limit > 0 ? Math.max(0, limit - used) : null,
       openBudget: limit > 0 ? openThreshold : null,
-      openAllowed: limit <= 0 || used < openThreshold,
-      closeAllowed: limit <= 0 || used < limit,
+      openAllowed: !blocked && (limit <= 0 || used < openThreshold),
+      closeAllowed: !blocked && (limit <= 0 || used < limit),
       usedRatio: limit > 0 ? +(used / limit).toFixed(4) : 0,
+      blocked: !!blocked,
+      blockCode: blocked ? blocked.code : null,
+      blockReason: blocked ? blocked.reason : null,
+      blockedAt: blocked ? blocked.at : null,
     };
   }
 

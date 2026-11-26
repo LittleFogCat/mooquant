@@ -160,6 +160,8 @@ async function main() {
   });
   tradeService = new TradeService({ source: tradeSource, quota: autoTrade });
   log("交易通道就绪：" + tradeSource.mode + "，额度预算 " + autoTrade.dailyCallBudget);
+  // 休眠/限流等非致命告警要落到日志里，否则只出现在 stdout，事后查不到
+  if (tradeSource.initWarning) log("⚠ 交易通道告警：" + tradeSource.initWarning);
 
   // ---- 策略 ----
   const strategyService = new StrategyService();

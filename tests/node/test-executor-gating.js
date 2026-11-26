@@ -158,5 +158,55 @@ module.exports = {
         try { fs.unlinkSync(file); } catch {}
       },
     },
+    {
+      name: "通道阻断时直接跳过，不再白消耗行情/交易调用",
+      async fn() {
+        const ex = makeExecutor({ period: "1d" });
+        let quoteCalled = false;
+        ex.quoteService = {
+          getHistory: async () => {
+            quoteCalled = true;
+            return { ok: true, data: { bars: [{ close: 10 }] } };
+          },
+        };
+        ex.tradeService = {
+          getQuota: () => ({ blocked: true, blockReason: "您的调用次数已达到上限… (113)" }),
+          getPositions: async () => ({ ok: false, error: "should not be called" }),
+        };
+        ex._logTick = () => {};
+        await ex._tickSymbol("sz000001");
+        assert.strictEqual(quoteCalled, false, "阻断后不该再拉行情");
+        assert.ok(/通道不可用/.test(ex._lastSkip || ""), "跳过原因：" + ex._lastSkip);
+      },
+    },
+    {
+      name: "演练模式下（只算信号）阻断不影响出信号",
+      async fn() {
+        const ex = makeExecutor({ period: "1d" });
+        ex._autoTrade = { enabled: false };
+        let quoteCalled = false;
+        let orderAttempted = false;
+        ex.quoteService = {
+          getHistory: async () => {
+            quoteCalled = true;
+            return { ok: true, data: { bars: [{ close: 10 }] } };
+          },
+        };
+        ex.tradeService = {
+          getQuota: () => ({ blocked: true, blockReason: "113" }),
+          getPositions: async () => ({ ok: true, data: [] }),
+          getAccount: async () => {
+            orderAttempted = true;
+            return { ok: false, error: "演练模式不该查账户" };
+          },
+        };
+        ex.modelService = { computeSignal: async () => ({ ok: true, data: { action: "buy", reason: "x" } }) };
+        ex._logTick = () => {};
+        await ex._tickSymbol("sz000001");
+        assert.strictEqual(quoteCalled, true, "演练模式仍应拉行情算信号");
+        assert.strictEqual(orderAttempted, false, "演练模式不该去查账户下单");
+        assert.ok(/自动交易已关闭/.test(ex._lastSkip || ""), "跳过原因：" + ex._lastSkip);
+      },
+    },
   ],
 };

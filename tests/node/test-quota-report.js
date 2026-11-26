@@ -269,5 +269,83 @@ module.exports = {
         fs.unlinkSync(path.join(REPORT_DIR, TEST_DATE + ".json"));
       },
     },
+    {
+      name: "113 额度/休眠错误会把通道标记为阻断，开平仓全部拦截",
+      async fn() {
+        const src = makeSource();
+        src.getAccount = async () => {
+          throw new Error("东财模拟盘: 您的调用次数已达到上限…账户已经进入休眠状态… (113)");
+        };
+        const ts = makeTradeService({ dailyCallBudget: 300, reserveForStopLoss: 100 }, src);
+        const r = await ts.getAccount();
+        assert.strictEqual(r.ok, false, "调用应失败");
+        const q = ts.getQuota();
+        assert.strictEqual(q.blocked, true, "必须标记阻断");
+        assert.strictEqual(q.blockCode, 113);
+        assert.strictEqual(q.openAllowed, false, "阻断时不能开仓");
+        assert.strictEqual(q.closeAllowed, false, "阻断时连平仓也下不出去");
+        assert.ok(/休眠/.test(q.blockReason), q.blockReason);
+
+        const buy = await ts.placeOrder({ symbol: "sz000001", side: "buy", quantity: 100, orderType: "market" });
+        assert.strictEqual(buy.ok, false, "阻断后不应再尝试下单");
+        assert.ok(/额度|通道/.test(buy.error), buy.error);
+      },
+    },
+    {
+      name: "普通网络错误不会误判为通道阻断",
+      async fn() {
+        const src = makeSource();
+        src.getAccount = async () => {
+          throw new Error("fetch failed: ECONNRESET");
+        };
+        const ts = makeTradeService({}, src);
+        await ts.getAccount();
+        assert.strictEqual(ts.getQuota().blocked, false, "偶发网络错误不该阻断整条通道");
+      },
+    },
+    {
+      name: "日报信号次数以当日日志为准（进程重启后不掉数）",
+      async fn() {
+        const src = makeSource();
+        const ts = makeTradeService({}, src);
+        const rs = new ReportService({
+          tradeService: ts,
+          // 进程内计数被重启清零，但当日日志里有 2 条信号
+          logService: {
+            readTrades: () => [],
+            readStrategyLogs: () => [
+              { signal: { action: "hold" } },
+              { signal: { action: "buy" }, orderId: "x" },
+            ],
+            readEquity: () => [],
+            logTrade() {},
+          },
+          getExecutorStatuses: () => [
+            { strategyId: "s1", strategyName: "演示", status: "running", tickCount: 0, pollCount: 10 },
+          ],
+        });
+        const r = await rs.generate(TEST_DATE);
+        assert.strictEqual(r.data.signals, 2, "应为日志里的 2 次，而不是内存里的 0");
+        assert.strictEqual(r.data.strategies[0].signalsFromLog, true);
+        fs.unlinkSync(path.join(REPORT_DIR, TEST_DATE + ".json"));
+      },
+    },
+    {
+      name: "终态回填失败时 filled 为 null（未知≠没成交）",
+      async fn() {
+        const src = makeSource();
+        const ts = makeTradeService({}, src);
+        await ts.placeOrder({ symbol: "sz000001", side: "buy", quantity: 100, orderType: "market" });
+        src.getOrders = async () => {
+          throw new Error("东财模拟盘: … (113)");
+        };
+        const rs = new ReportService({ tradeService: ts, logService: ts._log, getExecutorStatuses: () => [] });
+        const r = await rs.generate(TEST_DATE);
+        assert.strictEqual(r.data.orders, 1);
+        assert.strictEqual(r.data.filled, null, "拿不到终态时应为 null");
+        assert.ok(r.data.errors.some((e) => /委托终态回填/.test(e)), JSON.stringify(r.data.errors));
+        fs.unlinkSync(path.join(REPORT_DIR, TEST_DATE + ".json"));
+      },
+    },
   ],
 };
