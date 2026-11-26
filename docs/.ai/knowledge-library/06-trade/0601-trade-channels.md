@@ -88,6 +88,30 @@ main/datasources/trade/index.js（工厂）
   每天 `autoTrade.dailyCallBudget`（默认 300）为上限，其中 `reserveForStopLoss`（默认 100）只留给平仓；
   余量不足时禁止开仓、只允许平仓，用尽后全部拒绝并写 `rejected` 流水。详见 `08-ops/0801-unattended-trading.md`。
 
+#### 技能目录（可自查，2026-11-26 抓取）
+
+`GET {base}/skill/list` 是**公开接口，无需密钥**，可用于确认平台有没有新技能/改额度：
+
+| skillTag | 技能 | 基础额度/天 | Pro 额度/天 | clawhub 包名 |
+|---|---|---|---|---|
+| `scss` | 妙想资讯搜索 | 150 | 500 | eastmoney-financial-search |
+| `cwcs` | 妙想金融数据 | 150 | 500 | eastmoney-financial-data |
+| `zncg` | 妙想智能选股 | 150 | 500 | eastmoney-select-stock |
+| `mnzh` | **妙想模拟组合管理** | **1000** | **3000** | eastmoney-stock-simulator |
+| `zxgl` | 妙想自选股管理 | 200 | 400 | eastmoney-self-select |
+| `aisq` | 妙想AI社区 | 20 | 40 | — |
+
+要点：
+
+- 返回字段：`skillName / skillDesc / featureTags / featurePoints / clawhubAddress / dailyLimit / dailyLimitPro / skillTag`；
+- **`dailyLimitPro`** 是 Pro 档额度，模拟组合 Pro 为 **3000/天**（基础档 1000），我们的 300 预算即使在
+  基础档也只占 30%，Pro 档占 10%；
+- 技能通过 `clawhub.ai` 分发（`featureTags` 均为 `OpenClaw`），是"技能包"形态，不是 MCP tool 列表；
+- **没有独立的交易类技能**，下单仍然只走 `mnzh` 这一个 skill 的 5 个 REST 接口；
+- `/api/claw/mockTrading/history` 路由存在但恒返回 `500 服务繁忙`，不可用，所以历史成交仍以本地流水 + 当日 `orders` 为准；
+- `/apikey/usage`、`/skill/hibernate-status` 需要网页登录态头（`ct/ut/uid/deviceid`），无头环境查不到；
+- `em_` 前缀的 MCP Key 调 REST 会返回 `114 API密钥不存在或已失效`，两套密钥不通用。
+
 ### 已知限制
 
 - 仅支持 A 股 6 位代码；委托数量必须是 100 的整数倍。
