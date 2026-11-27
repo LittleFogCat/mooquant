@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 额度守门 + 日终报告测试
  *
  * 额度：验证「先停开仓、保留平仓」的分级策略，以及用尽后全部拦下。
@@ -345,6 +345,25 @@ module.exports = {
         assert.strictEqual(r.data.filled, null, "拿不到终态时应为 null");
         assert.ok(r.data.errors.some((e) => /委托终态回填/.test(e)), JSON.stringify(r.data.errors));
         fs.unlinkSync(path.join(REPORT_DIR, TEST_DATE + ".json"));
+      },
+    },
+    {
+      name: "阻断 30 分钟后允许再探一次（激活/次日重置能自动恢复）",
+      async fn() {
+        const src = makeSource();
+        src.getAccount = async () => {
+          throw new Error("…休眠状态… (113)");
+        };
+        const ts = makeTradeService({ dailyCallBudget: 300 }, src);
+        await ts.getAccount().catch(() => {});
+        assert.strictEqual(ts.getQuota().blocked, true, "刚失败时应阻断");
+        // 时间推进 31 分钟
+        ts._blocked.at = new Date(Date.now() - 31 * 60 * 1000).toISOString();
+        assert.strictEqual(ts.getQuota().blocked, false, "超过重试间隔应放行探测");
+        assert.strictEqual(ts.getQuota().openAllowed, true);
+        // 探测再次失败 → 立刻重新阻断
+        await ts.getAccount().catch(() => {});
+        assert.strictEqual(ts.getQuota().blocked, true, "探测失败要重新阻断");
       },
     },
   ],

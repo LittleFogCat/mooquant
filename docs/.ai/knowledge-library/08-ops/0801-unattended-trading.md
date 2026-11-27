@@ -1,4 +1,4 @@
-# 无人值守定时交易（交易日历 / 调度器 / 策略周期）
+﻿# 无人值守定时交易（交易日历 / 调度器 / 策略周期）
 
 > 版本基线：v0.1.42
 > 相关：`06-trade/0601-trade-channels.md`、`07-data/0701-quote-sources.md`、`docs/.ai/plan/auto-trading-daily.md`
@@ -188,7 +188,7 @@ canPlaceOrder(now) {
 
 阻断状态按日期自动解除（跨日 `getBlocked()` 返回 null），**但 113 不会因为跨日就恢复**——
 休眠是账户级状态，需要用户去东财 App 搜索「妙想skill」激活，或走网页接口 `/skill/activate`
-（需要登录态头 `ct/ut/uid/deviceid`，无头环境调不了）。
+（需要登录态头 `ct/ut/uid/deviceid`，无头环境调不了）。另外**阻断不是永久的**：超过 30 分钟（`blockRetryMs`）会放行一次"探针"，真恢复了就自动接着交易，没恢复会立刻重新阻断 —— 所以用户激活后不需要重启进程。
 
 ### 休眠时「起不来」比「不能交易」更糟
 
@@ -354,7 +354,7 @@ curl -s -X POST http://127.0.0.1:18765/signal -H "Content-Type: application/json
 ## 单测
 
 ```bash
-node tests/node/run.js            # 全部（77 例）
+node tests/node/run.js            # 全部（78 例）
 node tests/node/run.js scheduler  # 只跑调度器
 node tests/node/run.js full-day   # 只跑全流程模拟
 ```

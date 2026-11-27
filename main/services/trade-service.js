@@ -32,6 +32,8 @@ class TradeService {
     this._quotaCfg = {
       dailyCallBudget: Number(q.dailyCallBudget) > 0 ? Number(q.dailyCallBudget) : 0,
       reserveForStopLoss: Number(q.reserveForStopLoss) > 0 ? Number(q.reserveForStopLoss) : 0,
+      // 阻断后多久允许再试一次（默认 30 分钟）：休眠额度每天重置、激活后应立即恢复
+      blockRetryMs: Number(q.blockRetryMs) > 0 ? Number(q.blockRetryMs) : undefined,
     };
     this._calls = 0;
     this._callsDate = ymdLocal();
@@ -86,14 +88,34 @@ class TradeService {
     };
   }
 
-  /** 当前阻断状态（跨日自动解除，交给用户或次日重试） */
+  /**
+   * 当前阻断状态
+   *
+   * 阻断不能永久生效：
+   *  - 113（休眠/额度）每天重置 10 次，用户当天激活后额度立刻恢复；
+   *  - 114（密钥）改完 .env 也需要重启才生效，但至少别让程序一直卡在阻断态。
+   * 所以超过 retryAfterMs（默认 30 分钟）就允许放行一次"探针"：真恢复了下一次调用就能成功，
+   * 没恢复会再次被标记阻断。
+   */
   getBlocked() {
     if (!this._blocked) return null;
     if (this._blocked.date !== this._todayKey()) {
       this._blocked = null;
       return null;
     }
+    const retryAfterMs = this._quotaCfg.blockRetryMs > 0 ? this._quotaCfg.blockRetryMs : 30 * 60 * 1000;
+    const age = Date.now() - new Date(this._blocked.at).getTime();
+    if (Number.isFinite(age) && age > retryAfterMs) {
+      this._blockedProbe = this._blocked;
+      this._blocked = null;
+      return null; // 放行一次探测；若仍失败，_noteBlockingError 会立刻重新标记
+    }
     return this._blocked;
+  }
+
+  /** 上一次阻断的残留信息（用于界面提示"已尝试恢复"） */
+  getLastBlock() {
+    return this._blocked || this._blockedProbe || null;
   }
 
   /**
