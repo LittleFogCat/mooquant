@@ -22,6 +22,9 @@ function makeScheduler(opts = {}) {
   const sched = new TradingScheduler({
     calendar: opts.calendar || fakeCalendar(opts),
     autoTick: false,
+    // 注入时钟：不注入的话 getStatus() 会用真实"现在"，
+    // 导致周末跑测试时 isTradingDay 变 false（曾经因此红过一次）
+    now: opts.now || (() => at("10:00:00")),
     onEvent: (name, payload) => {
       events.push({ name, payload });
       if (opts.onEvent) return opts.onEvent(name, payload);

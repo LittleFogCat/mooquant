@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 东财适配器初始化容错测试
  *
  * 背景（2026-11-26 事故）：账户被平台降额到 10 次/天进入休眠后，
@@ -19,6 +19,17 @@ function makeSource(errMessage) {
   return src;
 }
 
+/** 该用例会触发适配器的 console.warn，测试里静音，避免污染输出（必须 await，否则恢复早于 warn） */
+async function withQuietWarn(fn) {
+  const orig = console.warn;
+  console.warn = () => {};
+  try {
+    return await fn();
+  } finally {
+    console.warn = orig;
+  }
+}
+
 module.exports = {
   name: "东财适配器初始化",
   cases: [
@@ -33,7 +44,7 @@ module.exports = {
       name: "113 休眠：初始化不失败，只记 warning（通道以阻断模式起来）",
       async fn() {
         const src = makeSource("东财模拟盘: 您的调用次数已达到上限…账户已经进入休眠状态… (113)");
-        await src.init(); // 不应抛
+        await withQuietWarn(() => src.init()); // 不应抛
         assert.ok(src.initWarning && /休眠/.test(src.initWarning), "应记录休眠告警");
       },
     },
@@ -55,11 +66,11 @@ module.exports = {
       name: "休眠状态解除后 initWarning 会被清掉",
       async fn() {
         const src = makeSource("…休眠状态… (113)");
-        await src.init();
+        await withQuietWarn(() => src.init());
         assert.ok(src.initWarning, "先有告警");
         // 模拟恢复：自检成功
         src._post = async (path) => ({ uid: "1", totalAssets: 1000000, balanceActual: 1000000, availBalance: 1000000 });
-        await src.init();
+        await withQuietWarn(() => src.init());
         assert.strictEqual(src.initWarning, null, "恢复后不该继续报警");
       },
     },

@@ -89,7 +89,12 @@ class EastmoneyDataSource {
   /** 单只快照 */
   async getQuote(rawSymbol) {
     const { secid, code, market } = this._secid(rawSymbol);
-    const cached = this._cache.get(code);
+    // 缓存键必须用 secid（含市场），不能用 6 位代码：
+    // 000001 既是上证指数（1.000001）又是平安银行（0.000001），
+    // 用 code 做键会在 TTL 内互相污染 —— 平安银行会报出指数的 3606，
+    // 若策略拿这个价格算均线，信号会完全失真。
+    const cacheKey = secid;
+    const cached = this._cache.get(cacheKey);
     if (cached && Date.now() - cached.at < this._cacheTtl) return cached.data;
 
     const fields = "f43,f44,f45,f46,f47,f48,f57,f58,f60,f107,f168,f169,f170,f116,f117";
@@ -117,7 +122,7 @@ class EastmoneyDataSource {
       floatCap: this._num(d.f117, 1),
       timestamp: new Date().toISOString(),
     };
-    this._cache.set(code, { at: Date.now(), data: quote });
+    this._cache.set(cacheKey, { at: Date.now(), data: quote });
     return quote;
   }
 
